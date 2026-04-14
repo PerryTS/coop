@@ -1,0 +1,50 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/perch-host-abi",
+    "crates/perch-worker",
+    "crates/perch-daemon",
+    "crates/perch-cli",
+    # perch-derisk-host is the Phase A.2 experiment that proved plugin roundtrip
+    # works from Rust. Kept in the workspace so it builds against the same
+    # perry-runtime version as the real crates.
+    "scripts/derisk/host-rust",
+]
+default-members = [
+    "crates/perch-daemon",
+    "crates/perch-worker",
+    "crates/perch-cli",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/skelpo/perch"
+rust-version = "1.75"
+
+[workspace.dependencies]
+# Shared runtime dependency — all crates that link perry-runtime pin to this
+# single version so we don't accidentally ship two copies of the GC/arena.
+perry-runtime = { path = "../perry/perry/crates/perry-runtime" }
+
+# perch crates depend on each other by workspace path
+perch-host-abi = { path = "crates/perch-host-abi" }
+
+# Common deps shared across perch crates
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+anyhow = "1"
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bytes = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+futures = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = false # don't strip — perch-worker needs to keep all perry-runtime symbols visible for dlopen'd plugins to resolve them at flat-namespace lookup time

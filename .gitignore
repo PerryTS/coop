@@ -1,0 +1,26 @@
+target/
+*.o
+*.so
+*.dylib
+*.dll
+
+# Perry intermediate files that get dropped in the project root during compile
+/hello_ts.o
+/_perry_failed_stubs.o
+/*_ts.o
+/perry_bc_*
+
+# Editor state
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local dev data
+.perch-dev/
+var/
+
+# Python / Node artifacts from example deployments
+node_modules/
+__pycache__/
+*.pyc

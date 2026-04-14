@@ -1,0 +1,14 @@
+name = "landing"
+version = "0.1.0"
+
+[hosts]
+domains = ["landing.test"]
+
+[[handlers]]
+file = "handlers/contact.ts"
+path = "/contact"
+method = "POST"
+
+[[static]]
+directory = "./static"
+path = "/"
