@@ -99,7 +99,24 @@ extern "C" {
     fn js_set_timeout_callback(cb: i64, delay: f64) -> i64;
     fn js_sleep_ms(ms: f64);
     fn js_promise_new() -> *mut u8;
+    fn js_promise_new_with_executor(executor: f64) -> *mut u8;
     fn js_promise_resolve(p: *mut u8, val: f64);
+    fn js_promise_reject(p: *mut u8, reason: f64);
+    fn js_promise_state(p: *mut u8) -> i32;
+    fn js_promise_value(p: *mut u8) -> f64;
+    fn js_promise_reason(p: *mut u8) -> f64;
+    fn js_value_is_promise(value: f64) -> i32;
+    fn js_promise_resolved(value: f64) -> *mut u8;
+    fn js_throw(value: f64) -> !;
+
+    // ── perry-stdlib: Postgres ──
+    fn js_pg_connect(config: f64) -> *mut u8;
+    fn js_pg_client_end(handle: i64) -> *mut u8;
+    fn js_pg_client_query(handle: i64, sql: f64) -> *mut u8;
+    fn js_pg_client_query_params(handle: i64, sql: f64, params: f64) -> *mut u8;
+    fn js_pg_create_pool(config: f64) -> *mut u8;
+    fn js_pg_pool_end(handle: i64) -> *mut u8;
+    fn js_pg_pool_query(handle: i64, sql: f64) -> *mut u8;
 
     // Stdlib pump (called by event loop to drain pending stdlib work)
     fn js_run_stdlib_pump();
@@ -116,7 +133,7 @@ extern "C" {
 
 #[inline(never)]
 pub fn force_link_perry_runtime_symbols() {
-    let funcs: [*const (); 56] = [
+    let funcs: [*const (); 73] = [
         js_gc_init as *const (),
         js_gc_register_global_root as *const (),
         js_console_log_dynamic as *const (),
@@ -169,6 +186,23 @@ pub fn force_link_perry_runtime_symbols() {
         js_set_timeout_value as *const (),
         js_set_timeout_callback as *const (),
         js_sleep_ms as *const (),
+        js_promise_new as *const (),
+        js_promise_new_with_executor as *const (),
+        js_promise_resolve as *const (),
+        js_promise_reject as *const (),
+        js_promise_state as *const (),
+        js_promise_value as *const (),
+        js_promise_reason as *const (),
+        js_value_is_promise as *const (),
+        js_promise_resolved as *const (),
+        js_throw as *const (),
+        js_pg_connect as *const (),
+        js_pg_client_end as *const (),
+        js_pg_client_query as *const (),
+        js_pg_client_query_params as *const (),
+        js_pg_create_pool as *const (),
+        js_pg_pool_end as *const (),
+        js_pg_pool_query as *const (),
         js_run_stdlib_pump as *const (),
         js_register_stdlib_pump as *const (),
         js_register_stdlib_has_active as *const (),

@@ -19,10 +19,27 @@
 use anyhow::{anyhow, Context, Result};
 use perry_runtime::{js_string_from_bytes, JSValue, StringHeader};
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 extern "C" {
     fn js_gc_init();
+    // Promise primitives — used to await async handler results.
+    fn js_promise_state(promise: *mut u8) -> i32; // 0=pending, 1=fulfilled, 2=rejected
+    fn js_promise_value(promise: *mut u8) -> f64;
+    fn js_promise_reason(promise: *mut u8) -> f64;
+    fn js_promise_run_microtasks();
+    fn js_run_stdlib_pump();
+    fn js_value_is_promise(value: f64) -> i32;
 }
+
+/// Maximum time to wait for an async handler's Promise to resolve.
+/// Matches the spec's per-invocation wall clock limit (30s).
+const PROMISE_AWAIT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long to sleep between Perry event-loop pumps when a Promise is
+/// still pending. Small enough to keep latency low; large enough to
+/// avoid burning a CPU core spin-waiting.
+const PROMISE_POLL_INTERVAL: Duration = Duration::from_millis(1);
 
 /// A loaded v0.5 Perry deployment dylib. Uses raw dlopen/dlsym because
 /// we need flat-namespace symbol resolution (the dylib's undefined
@@ -158,12 +175,21 @@ impl LoadedPlugin {
         }
     }
 
-    /// Call the deployment's `handle(reqJson: string): string` function.
+    /// Call the deployment's `handle(reqJson: string): string | Promise<string>`
+    /// function.
     ///
     /// `args` is a Rust string that will be NaN-boxed and passed to the
     /// Perry function. The return value is decoded back to a Rust String.
     ///
-    /// Returns `None` if no `handle` function was found in the dylib.
+    /// Supports both sync and async handler shapes:
+    /// - Sync: `function handle(req): string` returns a string directly
+    /// - Async: `async function handle(req): Promise<string>` returns a
+    ///   Promise; we await it via Perry's promise primitives, driving
+    ///   the event loop (microtasks + stdlib pump) until resolved or
+    ///   timed out.
+    ///
+    /// Returns `None` if no `handle` function was found in the dylib
+    /// or the resolved value isn't a string.
     pub fn invoke_handle(&mut self, args: &str) -> Result<Option<String>> {
         self.ensure_initialized();
 
@@ -175,17 +201,83 @@ impl LoadedPlugin {
         let args_val = make_perry_string(args);
         let result = handle_fn(args_val);
 
-        match read_perry_string(result) {
-            Some(s) => Ok(Some(s)),
-            None => {
-                // The function returned a non-string value (undefined,
-                // null, number, object, etc.). Log the raw bits for
-                // debugging.
-                tracing::warn!(
-                    raw_bits = format!("0x{:016x}", result.to_bits()),
-                    "handle function returned non-string"
-                );
-                Ok(None)
+        // Detect whether the handler returned a string (sync) or a
+        // Promise (async). js_value_is_promise inspects the NaN-box tag
+        // and the GC type of the underlying allocation — it correctly
+        // returns 0 for STRING_TAG, primitives, etc.
+        let is_promise = unsafe { js_value_is_promise(result) } != 0;
+
+        if !is_promise {
+            // Sync handler — read the string directly.
+            return Ok(read_perry_string(result));
+        }
+
+        // Async handler — await the Promise.
+        let resolved_value = self.await_promise(result)?;
+        Ok(read_perry_string(resolved_value))
+    }
+
+    /// Drive Perry's event loop until a Promise resolves or times out.
+    ///
+    /// While holding the plugin lock (DeploymentHost serializes this),
+    /// we periodically:
+    /// 1. Run any pending microtasks
+    /// 2. Pump perry-stdlib's pending work (drains sqlx/redis/reqwest
+    ///    completions back into Perry's promise state machine)
+    /// 3. Check the Promise's state — if fulfilled, return its value;
+    ///    if rejected, return an error; otherwise sleep briefly and retry
+    ///
+    /// The thread.sleep is necessary because Perry's promise resolution
+    /// is signaled via internal channels that we drain via the pump
+    /// functions — there's no waker-style notification we could cooperate
+    /// with via tokio. The sleep is small (1ms) so it adds negligible
+    /// latency for fast operations and only matters for long-running
+    /// requests where it dominates over the actual I/O time anyway.
+    fn await_promise(&mut self, promise_value: f64) -> Result<f64> {
+        // Extract the raw Promise pointer from the NaN-boxed value.
+        let promise_ptr = {
+            let v = JSValue::from_bits(promise_value.to_bits());
+            if !v.is_pointer() {
+                return Err(anyhow!(
+                    "handler returned non-pointer non-string value: 0x{:016x}",
+                    promise_value.to_bits()
+                ));
+            }
+            v.as_pointer::<u8>() as *mut u8
+        };
+
+        let start = Instant::now();
+        loop {
+            unsafe {
+                js_promise_run_microtasks();
+                js_run_stdlib_pump();
+            }
+
+            let state = unsafe { js_promise_state(promise_ptr) };
+            match state {
+                1 => {
+                    // Fulfilled.
+                    return Ok(unsafe { js_promise_value(promise_ptr) });
+                }
+                2 => {
+                    // Rejected. Read the rejection reason as a string for
+                    // the error message; if it's not a string, we just
+                    // include the raw bits.
+                    let reason = unsafe { js_promise_reason(promise_ptr) };
+                    let reason_str = read_perry_string(reason)
+                        .unwrap_or_else(|| format!("0x{:016x}", reason.to_bits()));
+                    return Err(anyhow!("handler promise rejected: {}", reason_str));
+                }
+                _ => {
+                    // Still pending.
+                    if start.elapsed() > PROMISE_AWAIT_TIMEOUT {
+                        return Err(anyhow!(
+                            "handler promise timed out after {:?}",
+                            PROMISE_AWAIT_TIMEOUT
+                        ));
+                    }
+                    std::thread::sleep(PROMISE_POLL_INTERVAL);
+                }
             }
         }
     }

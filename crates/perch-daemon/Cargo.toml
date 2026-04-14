@@ -55,8 +55,9 @@ askama_axum = "0.4"
 metrics = "0.24"
 metrics-exporter-prometheus = "0.16"
 
-# SQLite for schema provisioning + migration runner
-rusqlite = { version = "0.32", features = ["bundled"] }
+# SQLite for schema provisioning + migration runner.
+# Match perry-stdlib's version to avoid libsqlite3-sys "links" conflict.
+rusqlite = { version = "0.31", features = ["bundled"] }
 
 # Chrono for timestamps in admin UI
 chrono = { version = "0.4", features = ["serde"] }

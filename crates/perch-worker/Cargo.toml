@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 perch-host-abi = { workspace = true }
 perry-runtime = { workspace = true }
+perry-stdlib = { workspace = true }
 
 tokio = { workspace = true }
 anyhow = { workspace = true }

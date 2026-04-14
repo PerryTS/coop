@@ -27,6 +27,7 @@ rust-version = "1.75"
 # Shared runtime dependency — all crates that link perry-runtime pin to this
 # single version so we don't accidentally ship two copies of the GC/arena.
 perry-runtime = { path = "../perry/perry/crates/perry-runtime" }
+perry-stdlib = { path = "../perry/perry/crates/perry-stdlib", default-features = false, features = ["full"] }
 
 # perch crates depend on each other by workspace path
 perch-host-abi = { path = "crates/perch-host-abi" }

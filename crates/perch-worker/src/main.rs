@@ -23,6 +23,14 @@
 //! the symbols the plugin needs into our binary via black_box, dlopen,
 //! invoke — is the same.
 
+// Pull perry-stdlib into the binary so deployment dylibs can resolve
+// pg / redis / fetch / ws / etc. symbols at dlopen time. Without this
+// extern crate, Cargo's linker doesn't include perry-stdlib's symbols
+// because perch-worker's own code never references them — and our
+// symbol_pin trick can't reference symbols that aren't even in the
+// crate dependency graph.
+extern crate perry_stdlib;
+
 mod cron;
 mod host;
 mod listener;
