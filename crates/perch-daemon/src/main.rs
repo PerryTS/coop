@@ -103,6 +103,11 @@ fn main() -> Result<()> {
             }
         }
 
+        // Start the RSS watchdog: periodically check each worker's
+        // memory usage and restart any that exceed their configured
+        // max_worker_rss_mb limit.
+        let _watchdog = supervisor.clone().spawn_rss_watchdog();
+
         let shutdown_signal = signals::wait_for_shutdown();
         let serve_fut = listener::serve(runtime_cfg.clone(), supervisor.clone(), shutdown_signal);
 

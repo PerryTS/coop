@@ -1,0 +1,12 @@
+name = "test7"
+version = "0.1.0"
+
+# Test 7: allocates large arrays and Maps to stress the GC/arena.
+
+[hosts]
+domains = ["perch-test7.perryts.com"]
+
+[[handlers]]
+file = "handlers/main.ts"
+path = "/"
+method = "GET"

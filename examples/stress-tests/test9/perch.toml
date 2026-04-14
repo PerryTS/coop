@@ -1,0 +1,13 @@
+name = "test9"
+version = "0.1.0"
+
+# Test 9: regex-heavy — runs multiple regex matches per request.
+# Stresses Perry's regex runtime (real RegExp via Rust regex crate).
+
+[hosts]
+domains = ["perch-test9.perryts.com"]
+
+[[handlers]]
+file = "handlers/main.ts"
+path = "/"
+method = "GET"

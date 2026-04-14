@@ -82,7 +82,7 @@ fn read_perry_string(value: f64) -> Option<String> {
         return None;
     }
     unsafe {
-        let len = (*header).length as usize;
+        let len = (*header).byte_len as usize;
         let data = (header as *const u8).add(std::mem::size_of::<StringHeader>());
         let slice = std::slice::from_raw_parts(data, len);
         Some(String::from_utf8_lossy(slice).into_owned())

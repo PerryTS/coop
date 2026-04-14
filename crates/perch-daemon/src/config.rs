@@ -478,6 +478,13 @@ pub struct DeploymentLimitsConfig {
     pub max_wall_clock_ms: u32,
     #[serde(default = "default_max_concurrent_invocations")]
     pub max_concurrent_invocations: u32,
+    /// Hard RSS limit per worker process in MB. When exceeded, the
+    /// daemon kills + respawns the worker. Default 512 MB. This bounds
+    /// the impact of a ballooning deployment (test5 grew to 196 MB
+    /// during stress testing because Perry's arena allocator doesn't
+    /// release pages back to the OS aggressively).
+    #[serde(default = "default_max_worker_rss_mb")]
+    pub max_worker_rss_mb: u32,
 }
 
 fn default_max_memory_mb() -> u32 {
@@ -489,6 +496,9 @@ fn default_max_wall_clock_ms() -> u32 {
 fn default_max_concurrent_invocations() -> u32 {
     1000
 }
+fn default_max_worker_rss_mb() -> u32 {
+    512
+}
 
 impl Default for DeploymentLimitsConfig {
     fn default() -> Self {
@@ -496,6 +506,7 @@ impl Default for DeploymentLimitsConfig {
             max_memory_mb_per_invocation: default_max_memory_mb(),
             max_wall_clock_ms: default_max_wall_clock_ms(),
             max_concurrent_invocations: default_max_concurrent_invocations(),
+            max_worker_rss_mb: default_max_worker_rss_mb(),
         }
     }
 }

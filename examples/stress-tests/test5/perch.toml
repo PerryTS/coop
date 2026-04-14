@@ -1,0 +1,13 @@
+name = "test5"
+version = "0.1.0"
+
+# Test 5: large response — generates a 50 KB JSON payload.
+# Measures large response building + base64 encoding overhead.
+
+[hosts]
+domains = ["perch-test5.perryts.com"]
+
+[[handlers]]
+file = "handlers/main.ts"
+path = "/"
+method = "GET"

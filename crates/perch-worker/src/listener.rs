@@ -170,14 +170,40 @@ async fn handle_connection(
         }
     }
 
-    // Subsequent messages: Dispatch / Cron / Queue / Shutdown.
+    // Multiplexed dispatch. Spawn a single writer task that drains
+    // responses from a channel; the reader loop spawns a task per
+    // incoming request that does the work and pushes the response into
+    // the channel. This lets multiple requests be in flight on the same
+    // socket connection simultaneously — the only serialization point
+    // becomes the plugin lock inside DeploymentHost::dispatch (which is
+    // necessary for Perry's GC + arena), not the network layer.
+    let (resp_tx, mut resp_rx) =
+        tokio::sync::mpsc::channel::<WorkerResponse>(128);
+
+    let writer_deployment = deployment.to_string();
+    let writer_handle = tokio::spawn(async move {
+        let mut writer = writer;
+        while let Some(resp) = resp_rx.recv().await {
+            if let Err(e) = write_frame(&mut writer, &resp).await {
+                debug!(
+                    deployment = %writer_deployment,
+                    error = ?e,
+                    "writer task: socket closed"
+                );
+                break;
+            }
+        }
+    });
+
+    // Reader loop: parse + spawn dispatch task per request.
     loop {
         let frame = match read_frame(&mut reader).await {
             Ok(f) => f,
             Err(e) => {
-                // EOF or read error — client went away, we're done with
-                // this connection.
+                // EOF or read error — client went away.
                 debug!(deployment = deployment, error = ?e, "connection closed");
+                drop(resp_tx);
+                let _ = writer_handle.await;
                 return Ok(());
             }
         };
@@ -185,69 +211,90 @@ async fn handle_connection(
         let req: WorkerRequest = serde_json::from_slice(&frame)
             .context("parsing WorkerRequest")?;
 
-        let response = match req {
-            WorkerRequest::Hello(_) => WorkerResponse::ProtocolError {
-                message: "Hello after handshake".to_string(),
-            },
-            WorkerRequest::Dispatch {
-                request_id,
-                request,
-            } => match host.dispatch(request).await {
-                Ok(response) => WorkerResponse::DispatchResult {
-                    request_id,
-                    response,
-                },
-                Err(e) => {
-                    error!(deployment = deployment, error = ?e, "dispatch failed");
-                    WorkerResponse::DispatchResult {
-                        request_id,
-                        response: perch_host_abi::DeploymentResponse {
-                            status: 500,
-                            headers: Default::default(),
-                            body_base64: base64_encode(
-                                format!("perch: dispatch error: {}", e).as_bytes(),
-                            ),
-                        },
-                    }
-                }
-            },
-            WorkerRequest::Cron {
-                request_id,
-                context,
-            } => match host.fire_cron(context).await {
-                Ok(()) => WorkerResponse::CronResult {
-                    request_id,
-                    message: None,
-                    error: None,
-                },
-                Err(e) => WorkerResponse::CronResult {
-                    request_id,
-                    message: None,
-                    error: Some(e.to_string()),
-                },
-            },
-            WorkerRequest::Queue {
-                request_id,
-                message,
-            } => match host.deliver_queue_message(message).await {
-                Ok(disposition) => WorkerResponse::QueueResult {
-                    request_id,
-                    disposition,
-                    error: None,
-                },
-                Err(e) => WorkerResponse::QueueResult {
-                    request_id,
-                    disposition: perch_host_abi::QueueDisposition::Nack,
-                    error: Some(e.to_string()),
-                },
-            },
-            WorkerRequest::Shutdown { grace_period_ms: _ } => {
-                write_frame(&mut writer, &WorkerResponse::Goodbye).await?;
-                return Ok(());
-            }
-        };
+        // Shutdown is a special case — handled inline so we can return.
+        if matches!(req, WorkerRequest::Shutdown { .. }) {
+            let _ = resp_tx.send(WorkerResponse::Goodbye).await;
+            drop(resp_tx);
+            let _ = writer_handle.await;
+            return Ok(());
+        }
 
-        write_frame(&mut writer, &response).await?;
+        // Dispatch + Cron + Queue + Hello-after-handshake → spawn task.
+        let host = host.clone();
+        let resp_tx_clone = resp_tx.clone();
+        let deployment_str = deployment.to_string();
+        tokio::spawn(async move {
+            let response = process_request(req, host, &deployment_str).await;
+            let _ = resp_tx_clone.send(response).await;
+        });
+    }
+}
+
+async fn process_request(
+    req: WorkerRequest,
+    host: Arc<DeploymentHost>,
+    deployment: &str,
+) -> WorkerResponse {
+    match req {
+        WorkerRequest::Hello(_) => WorkerResponse::ProtocolError {
+            message: "Hello after handshake".to_string(),
+        },
+        WorkerRequest::Dispatch {
+            request_id,
+            request,
+        } => match host.dispatch(request).await {
+            Ok(response) => WorkerResponse::DispatchResult {
+                request_id,
+                response,
+            },
+            Err(e) => {
+                error!(deployment = deployment, error = ?e, "dispatch failed");
+                WorkerResponse::DispatchResult {
+                    request_id,
+                    response: perch_host_abi::DeploymentResponse {
+                        status: 500,
+                        headers: Default::default(),
+                        body_base64: base64_encode(
+                            format!("perch: dispatch error: {}", e).as_bytes(),
+                        ),
+                    },
+                }
+            }
+        },
+        WorkerRequest::Cron {
+            request_id,
+            context,
+        } => match host.fire_cron(context).await {
+            Ok(()) => WorkerResponse::CronResult {
+                request_id,
+                message: None,
+                error: None,
+            },
+            Err(e) => WorkerResponse::CronResult {
+                request_id,
+                message: None,
+                error: Some(e.to_string()),
+            },
+        },
+        WorkerRequest::Queue {
+            request_id,
+            message,
+        } => match host.deliver_queue_message(message).await {
+            Ok(disposition) => WorkerResponse::QueueResult {
+                request_id,
+                disposition,
+                error: None,
+            },
+            Err(e) => WorkerResponse::QueueResult {
+                request_id,
+                disposition: perch_host_abi::QueueDisposition::Nack,
+                error: Some(e.to_string()),
+            },
+        },
+        WorkerRequest::Shutdown { .. } => {
+            // Handled in the reader loop before reaching here.
+            WorkerResponse::Goodbye
+        }
     }
 }
 

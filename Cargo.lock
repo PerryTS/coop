@@ -1859,7 +1859,7 @@ dependencies = [
 
 [[package]]
 name = "perry-runtime"
-version = "0.5.18"
+version = "0.5.20"
 dependencies = [
  "anyhow",
  "base64",

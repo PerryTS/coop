@@ -85,11 +85,27 @@ extern "C" {
 
     // Promise + timers
     fn js_promise_run_microtasks();
-    fn js_timer_tick();
-    fn js_interval_timer_tick();
-    fn js_callback_timer_tick();
+    fn js_timer_tick() -> i32;
+    fn js_timer_has_pending() -> i32;
+    fn js_timer_next_deadline() -> f64;
+    fn js_timer_now() -> f64;
+    fn js_interval_timer_tick() -> i32;
+    fn js_interval_timer_has_pending() -> i32;
+    fn js_interval_timer_next_deadline() -> f64;
+    fn js_callback_timer_tick() -> i32;
+    fn js_callback_timer_has_pending() -> i32;
+    fn js_set_timeout(delay: f64) -> *mut u8;
+    fn js_set_timeout_value(delay: f64, value: f64) -> *mut u8;
+    fn js_set_timeout_callback(cb: i64, delay: f64) -> i64;
+    fn js_sleep_ms(ms: f64);
     fn js_promise_new() -> *mut u8;
     fn js_promise_resolve(p: *mut u8, val: f64);
+
+    // Stdlib pump (called by event loop to drain pending stdlib work)
+    fn js_run_stdlib_pump();
+    fn js_register_stdlib_pump(f: extern "C" fn() -> i32);
+    fn js_register_stdlib_has_active(f: extern "C" fn() -> i32);
+    fn js_stdlib_has_active_handles() -> i32;
 
     // Native call fallback
     fn js_native_call_method(
@@ -100,7 +116,7 @@ extern "C" {
 
 #[inline(never)]
 pub fn force_link_perry_runtime_symbols() {
-    let funcs: [*const (); 42] = [
+    let funcs: [*const (); 56] = [
         js_gc_init as *const (),
         js_gc_register_global_root as *const (),
         js_console_log_dynamic as *const (),
@@ -141,8 +157,22 @@ pub fn force_link_perry_runtime_symbols() {
         js_buffer_from_value as *const (),
         js_promise_run_microtasks as *const (),
         js_timer_tick as *const (),
+        js_timer_has_pending as *const (),
+        js_timer_next_deadline as *const (),
+        js_timer_now as *const (),
         js_interval_timer_tick as *const (),
+        js_interval_timer_has_pending as *const (),
+        js_interval_timer_next_deadline as *const (),
         js_callback_timer_tick as *const (),
+        js_callback_timer_has_pending as *const (),
+        js_set_timeout as *const (),
+        js_set_timeout_value as *const (),
+        js_set_timeout_callback as *const (),
+        js_sleep_ms as *const (),
+        js_run_stdlib_pump as *const (),
+        js_register_stdlib_pump as *const (),
+        js_register_stdlib_has_active as *const (),
+        js_stdlib_has_active_handles as *const (),
     ];
     std::hint::black_box(funcs);
 }

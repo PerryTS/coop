@@ -45,6 +45,7 @@ pub struct LiveDeployment {
     pub dylib_path: PathBuf,
     pub socket_path: PathBuf,
     pub worker_child: tokio::process::Child,
+    pub worker_pid: u32,
     pub worker_client: Arc<WorkerClient>,
 }
 
@@ -298,6 +299,7 @@ impl DeploymentSupervisor {
                 }
             }
 
+            let worker_pid = child.id().unwrap_or(0);
             live.insert(
                 name.to_string(),
                 LiveDeployment {
@@ -307,6 +309,7 @@ impl DeploymentSupervisor {
                     dylib_path,
                     socket_path,
                     worker_child: child,
+                    worker_pid,
                     worker_client,
                 },
             );
@@ -585,6 +588,72 @@ impl DeploymentSupervisor {
             deployments = new_state.deployment_count(),
             "router state rebuilt"
         );
+    }
+
+    /// Read a process's RSS in MB from /proc/<pid>/status (Linux only).
+    /// Returns None on macOS (and other non-Linux platforms) — the RSS
+    /// watchdog is a Linux-only feature for now.
+    #[cfg(target_os = "linux")]
+    fn read_rss_mb(pid: u32) -> Option<u64> {
+        let path = format!("/proc/{}/status", pid);
+        let content = std::fs::read_to_string(&path).ok()?;
+        for line in content.lines() {
+            if let Some(rest) = line.strip_prefix("VmRSS:") {
+                let n: u64 = rest
+                    .trim()
+                    .split_whitespace()
+                    .next()?
+                    .parse()
+                    .ok()?;
+                return Some(n / 1024); // KB → MB
+            }
+        }
+        None
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[allow(dead_code)]
+    fn read_rss_mb(_pid: u32) -> Option<u64> {
+        None
+    }
+
+    /// Background task that periodically checks each worker's RSS and
+    /// restarts any worker that exceeds its `max_worker_rss_mb` limit.
+    /// Bounded the impact of ballooning deployments (e.g. one that
+    /// builds large response buffers).
+    pub fn spawn_rss_watchdog(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                let to_restart: Vec<(String, u32, u64, u32)> = {
+                    let live = self.live.read().await;
+                    live.iter()
+                        .filter_map(|(name, d)| {
+                            let limit = d.config.limits.max_worker_rss_mb;
+                            let rss = Self::read_rss_mb(d.worker_pid)?;
+                            if rss > limit as u64 {
+                                Some((name.clone(), d.worker_pid, rss, limit))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                };
+                for (name, pid, rss, limit) in to_restart {
+                    warn!(
+                        deployment = %name,
+                        pid,
+                        rss_mb = rss,
+                        limit_mb = limit,
+                        "worker RSS exceeded limit, restarting"
+                    );
+                    if let Err(e) = self.load_deployment(&name).await {
+                        error!(deployment = %name, error = ?e, "RSS-triggered restart failed");
+                    }
+                }
+            }
+        })
     }
 
     /// Remove a deployment entirely (directory deleted, or explicit
