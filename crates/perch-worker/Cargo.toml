@@ -20,12 +20,19 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+chrono = "0.4"
 
 # For building DeploymentRequest/Response body base64
 base64 = "0.22"
 
 # dlopen/dlsym for v0.5 direct-call model
 libc = "0.2"
+
+# Cron scheduling
+cron = "0.12"
+
+# Config parsing (reads deployment's perch.toml for cron/queue config)
+toml = "0.8"
 
 # CLI parsing
 clap = { version = "4", features = ["derive"] }

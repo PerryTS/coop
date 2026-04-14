@@ -23,9 +23,11 @@
 //! the symbols the plugin needs into our binary via black_box, dlopen,
 //! invoke — is the same.
 
+mod cron;
 mod host;
 mod listener;
 mod plugin_host;
+mod queue;
 mod symbol_pin;
 
 use clap::Parser;
