@@ -2,58 +2,59 @@
 //!
 //! Spawned by perch-daemon with `--deployment <name>`. Responsibilities:
 //!
-//! 1. `dlopen` the deployment's compiled `.dylib` via perry-runtime's
-//!    existing plugin loader (`perry_plugin_load`). Phase A.2 proved this
-//!    flow works end-to-end: the deployment's `activate()` runs inside
-//!    our address space and registers its tools/routes/hooks in perry's
-//!    shared registry.
+//! 1. Load the separately packaged Perry runtime and stdlib providers.
+//! 2. Preload the deployment's compiled `.dylib` on a dedicated Perry
+//!    executor thread and call its required `handle(Buffer): Buffer` export.
 //!
-//! 2. Listen on `/var/lib/perch/sockets/<deployment>.sock` for framed
+//! 3. Listen on `/var/lib/perch/sockets/<deployment>.sock` for framed
 //!    requests from perch-daemon. Each message is length-prefixed JSON
 //!    (see perch_host_abi).
 //!
-//! 3. For every `Dispatch` request, build a `DeploymentRequest`, serialize
-//!    to JSON, and invoke the deployment's registered `"route"` tool via
-//!    `perry_plugin_invoke_tool`. The tool returns a `DeploymentResponse`
-//!    JSON, which we frame back over the socket.
-//!
-//! The Phase A.2 derisk binary (scripts/derisk/host-rust) proved the
-//! plugin-roundtrip half of this. perch-worker graduates that into a real
-//! daemon-facing process, but the core trick — link perry-runtime, force
-//! the symbols the plugin needs into our binary via black_box, dlopen,
-//! invoke — is the same.
+//! 4. Translate each socket `Dispatch` request to the compact application ABI
+//!    and frame its `DeploymentResponse` back over the socket.
 
-// Pull perry-stdlib into the binary so deployment dylibs can resolve
-// pg / redis / fetch / ws / etc. symbols at dlopen time. Without this
-// extern crate, Cargo's linker doesn't include perry-stdlib's symbols
-// because perch-worker's own code never references them — and our
-// symbol_pin trick can't reference symbols that aren't even in the
-// crate dependency graph.
-extern crate perry_stdlib;
-
-mod cron;
-mod host;
 mod listener;
-mod plugin_host;
-mod queue;
-mod symbol_pin;
+mod shard_listener;
 
+use perch_app_host::{host, initialize_runtime_libraries_with_verification, ProviderVerification};
+
+use anyhow::Context;
 use clap::Parser;
+use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 use tracing::{error, info};
 
 #[derive(Debug, Parser)]
-#[command(name = "perch-worker", about = "Per-deployment host process")]
+#[command(
+    name = "perch-worker",
+    about = "Dedicated or multi-application Perry host process"
+)]
 struct Cli {
-    /// Deployment name. The worker will listen on
-    /// <sockets_dir>/<deployment>.sock and load
-    /// <compiled_dir>/<deployment>.dylib.
-    #[arg(long)]
-    deployment: String,
+    /// Deployment name. The worker listens on the assigned generation socket
+    /// and loads the exact immutable library supplied with `--dylib`.
+    #[arg(
+        long,
+        required_unless_present = "shard_id",
+        conflicts_with = "shard_id"
+    )]
+    deployment: Option<String>,
 
-    /// Path to the compiled deployment dylib. If not set, defaults to
-    /// <compiled_dir>/<deployment>.{dylib,so}.
-    #[arg(long)]
+    /// Run as a dynamic multi-application shard instead of a dedicated
+    /// deployment worker.
+    #[arg(long, conflicts_with = "deployment")]
+    shard_id: Option<String>,
+
+    /// Maximum distinct logical deployments resident in a shard. Replacement
+    /// generations of the same deployment may overlap while draining.
+    #[arg(long, default_value_t = 25, requires = "shard_id")]
+    shard_max_apps: usize,
+
+    /// Exact content-addressed application library. Dedicated workers require
+    /// this explicitly; there is no mutable compiled-directory fallback.
+    #[arg(long, required_unless_present = "shard_id")]
     dylib: Option<PathBuf>,
 
     /// Directory where the worker's Unix socket is created. Defaults to
@@ -61,10 +62,10 @@ struct Cli {
     #[arg(long, default_value = "/var/lib/perch/sockets")]
     sockets_dir: PathBuf,
 
-    /// Directory where compiled deployment dylibs live. Defaults to
-    /// /var/lib/perch/compiled.
-    #[arg(long, default_value = "/var/lib/perch/compiled")]
-    compiled_dir: PathBuf,
+    /// Exact generation-owned socket path assigned by the daemon. The
+    /// directory-derived legacy name is retained only for manual invocation.
+    #[arg(long)]
+    socket: Option<PathBuf>,
 
     /// Override the Perry module name for symbol lookup. By default the
     /// module name is derived from the dylib filename stem. When the
@@ -74,15 +75,92 @@ struct Cli {
     /// `--module-name contact_ts` to tell the worker the correct name.
     #[arg(long)]
     module_name: Option<String>,
+
+    /// Separately packaged Perry runtime shared library.
+    #[arg(long, env = "PERCH_PERRY_RUNTIME_LIBRARY")]
+    perry_runtime: PathBuf,
+
+    /// Separately packaged Perry stdlib shared library.
+    #[arg(long, env = "PERCH_PERRY_STDLIB_LIBRARY")]
+    perry_stdlib: PathBuf,
+
+    /// Integrity boundary for the separately packaged provider pair. The
+    /// immutable mode is accepted only when the running service cannot write
+    /// any provider file or canonical parent directory.
+    #[arg(
+        long,
+        default_value = "full_hash",
+        value_parser = ["full_hash", "root_owned_immutable"]
+    )]
+    provider_verification: String,
+
+    /// Stack reservation for the thread-affine Perry executor.
+    #[arg(
+        long,
+        default_value_t = host::DEFAULT_EXECUTOR_STACK_SIZE_BYTES
+    )]
+    executor_stack_size_bytes: usize,
+
+    /// Maximum application commands waiting behind the running command.
+    #[arg(long, default_value_t = host::DEFAULT_COMMAND_QUEUE_CAPACITY)]
+    command_queue_capacity: usize,
+
+    /// Completed invocations between Perry arena-growth checks. Zero disables
+    /// automatic host-boundary full-GC pacing.
+    #[arg(long, default_value_t = host::DEFAULT_GC_RECLAIM_CHECK_INTERVAL)]
+    gc_reclaim_check_interval: usize,
+
+    /// Minimum uncollected arena growth before a precise host-boundary full GC.
+    #[arg(long, default_value_t = host::DEFAULT_GC_RECLAIM_GROWTH_BYTES)]
+    gc_reclaim_growth_bytes: u64,
+
+    /// Opaque deployment context assigned by the daemon for host callbacks.
+    #[arg(long, default_value_t = 0)]
+    deployment_context_id: u64,
+
+    /// Host-owned queue database URL. Supplied through the environment by the
+    /// daemon so it does not appear in process arguments.
+    #[arg(long, env = "PERCH_QUEUE_POSTGRES_URL")]
+    queue_postgres_url: Option<String>,
+
+    #[arg(
+        long,
+        env = "PERCH_QUEUE_POSTGRES_MAX_CONNECTIONS",
+        default_value_t = 2
+    )]
+    queue_postgres_max_connections: u32,
+
+    #[arg(long, env = "PERCH_QUEUE_POLICIES_JSON")]
+    queue_policies_json: Option<String>,
+
+    /// Prepared cgroup-v2 membership file. The daemon creates and limits the
+    /// generation before spawn; the worker attaches itself before loading any
+    /// Perry or application code.
+    #[arg(long, hide = true)]
+    cgroup_procs: Option<PathBuf>,
+
+    /// Daemon PID that owns this worker generation. Daemon-spawned workers
+    /// terminate if they are reparented, preventing orphan application hosts
+    /// after a daemon crash or SIGKILL. Manual workers may omit this.
+    #[arg(long, hide = true)]
+    parent_pid: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct WorkerQueuePolicies {
+    deployment: String,
+    queues: Vec<WorkerQueuePolicy>,
+}
+
+#[derive(Deserialize)]
+struct WorkerQueuePolicy {
+    name: String,
+    max_payload_bytes: usize,
+    max_attempts: u32,
+    max_delay_ms: u64,
 }
 
 fn main() -> anyhow::Result<()> {
-    // Force the linker to keep the perry-runtime symbols that the dlopen'd
-    // plugin will reference as undefined. Without this, Cargo's release
-    // linker dead-strips them from the worker binary and dlopen fails with
-    // "symbol not found in flat namespace". See symbol_pin.rs for details.
-    symbol_pin::force_link_perry_runtime_symbols();
-
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -93,43 +171,287 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
-    info!(deployment = %cli.deployment, "perch-worker starting");
-
-    let dylib_path = cli.dylib.clone().unwrap_or_else(|| {
-        let ext = if cfg!(target_os = "macos") { "dylib" } else { "so" };
-        cli.compiled_dir.join(format!("{}.{}", cli.deployment, ext))
-    });
-
-    if !dylib_path.exists() {
-        error!(dylib = %dylib_path.display(), "deployment dylib not found");
-        std::process::exit(1);
+    if let Some(parent_pid) = cli.parent_pid {
+        bind_to_parent_process(parent_pid)?;
     }
+    if let Some(cgroup_procs) = cli.cgroup_procs.as_deref() {
+        attach_to_cgroup(cgroup_procs)?;
+    }
+    initialize_runtime_libraries_with_verification(
+        &cli.perry_runtime,
+        &cli.perry_stdlib,
+        ProviderVerification::parse(&cli.provider_verification)?,
+    )?;
+    let worker_label = cli
+        .shard_id
+        .as_deref()
+        .or(cli.deployment.as_deref())
+        .expect("clap requires deployment or shard ID")
+        .to_string();
+    info!(
+        worker = %worker_label,
+        mode = if cli.shard_id.is_some() { "shard" } else { "dedicated" },
+        cgroup_enforced = cli.cgroup_procs.is_some(),
+        "perch-worker starting"
+    );
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .thread_name(format!("perch-worker-{}", cli.deployment))
+        .thread_name(format!("perch-worker-{worker_label}"))
         .build()?;
 
     runtime.block_on(async move {
-        let host = host::DeploymentHost::load(
-            &cli.deployment,
+        if let Some(url) = cli.queue_postgres_url.as_deref() {
+            let store = Arc::new(
+                perch_app_host::queue_store::QueueStore::connect(
+                    url,
+                    cli.queue_postgres_max_connections,
+                )
+                .await?,
+            );
+            perch_app_host::queue_store::initialize_queue_gateway(
+                store,
+                tokio::runtime::Handle::current(),
+            )?;
+        }
+
+        if let Some(shard_id) = cli.shard_id.as_deref() {
+            if cli.deployment_context_id != 0 || cli.queue_policies_json.is_some() {
+                return Err(anyhow::anyhow!(
+                    "shard queue contexts are supplied per loaded deployment"
+                ));
+            }
+            let socket_path = cli
+                .socket
+                .clone()
+                .unwrap_or_else(|| cli.sockets_dir.join(format!("shard-{shard_id}.sock")));
+            if let Some(parent) = socket_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let listener =
+                shard_listener::ShardListener::bind(shard_id, &socket_path, cli.shard_max_apps)?;
+            info!(
+                shard = shard_id,
+                socket = %socket_path.display(),
+                max_apps = cli.shard_max_apps,
+                "worker shard ready"
+            );
+            return listener.serve().await;
+        }
+
+        let deployment = cli
+            .deployment
+            .as_deref()
+            .expect("dedicated worker requires deployment");
+        if cli.deployment_context_id != 0 {
+            if cli.queue_postgres_url.is_none() {
+                return Err(anyhow::anyhow!(
+                    "deployment context requires PERCH_QUEUE_POSTGRES_URL"
+                ));
+            }
+            let raw_policies = cli.queue_policies_json.as_deref().ok_or_else(|| {
+                anyhow::anyhow!("deployment context requires PERCH_QUEUE_POLICIES_JSON")
+            })?;
+            let policies: WorkerQueuePolicies = serde_json::from_str(raw_policies)?;
+            if policies.deployment != deployment {
+                return Err(anyhow::anyhow!(
+                    "worker queue policy deployment mismatch: expected {:?}, got {:?}",
+                    deployment,
+                    policies.deployment
+                ));
+            }
+            perch_app_host::queue_store::register_enqueue_context(
+                cli.deployment_context_id,
+                deployment.to_string(),
+                policies
+                    .queues
+                    .into_iter()
+                    .map(|queue| {
+                        (
+                            queue.name,
+                            perch_app_host::queue_store::EnqueuePolicy {
+                                max_payload_bytes: queue.max_payload_bytes,
+                                max_attempts: queue.max_attempts,
+                                max_delay: Duration::from_millis(queue.max_delay_ms),
+                            },
+                        )
+                    })
+                    .collect::<HashMap<_, _>>(),
+            )?;
+        }
+
+        let dylib_path = cli
+            .dylib
+            .clone()
+            .expect("clap requires --dylib for dedicated workers");
+        if !dylib_path.exists() {
+            error!(dylib = %dylib_path.display(), "deployment dylib not found");
+            return Err(anyhow::anyhow!(
+                "deployment dylib does not exist: {}",
+                dylib_path.display()
+            ));
+        }
+
+        let host = host::DeploymentHost::load_with_options(
+            deployment,
             &dylib_path,
             cli.module_name.as_deref(),
+            host::DeploymentHostOptions {
+                executor_stack_size_bytes: cli.executor_stack_size_bytes,
+                command_queue_capacity: cli.command_queue_capacity,
+                gc_reclaim_check_interval: cli.gc_reclaim_check_interval,
+                gc_reclaim_growth_bytes: cli.gc_reclaim_growth_bytes,
+                deployment_context_id: cli.deployment_context_id,
+            },
         )?;
 
-        let socket_path = cli.sockets_dir.join(format!("{}.sock", cli.deployment));
+        let socket_path = cli
+            .socket
+            .clone()
+            .unwrap_or_else(|| cli.sockets_dir.join(format!("{deployment}.sock")));
         if let Some(parent) = socket_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
 
-        let listener = listener::Listener::bind(&cli.deployment, &socket_path, host)?;
+        let listener = listener::Listener::bind(deployment, &socket_path, host)?;
         info!(
             socket = %socket_path.display(),
             "worker ready"
         );
 
-        listener.serve().await
+        let result = listener.serve().await;
+        perch_app_host::queue_store::unregister_enqueue_context(cli.deployment_context_id);
+        result
     })?;
 
     Ok(())
+}
+
+#[cfg(unix)]
+fn parent_process_matches(expected_parent_pid: u32) -> bool {
+    expected_parent_pid != 0 && unsafe { libc::getppid() } == expected_parent_pid as libc::pid_t
+}
+
+/// Bind a daemon-spawned worker to its exact parent process. Linux gets a
+/// kernel parent-death signal for immediate cleanup; the portable Unix watcher
+/// covers macOS and also verifies the race where the parent exits before the
+/// worker finishes initializing.
+#[cfg(unix)]
+fn bind_to_parent_process(expected_parent_pid: u32) -> anyhow::Result<()> {
+    if expected_parent_pid == 0 || expected_parent_pid > libc::pid_t::MAX as u32 {
+        anyhow::bail!("worker parent PID must fit a positive pid_t");
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let result = unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) };
+        if result != 0 {
+            return Err(std::io::Error::last_os_error())
+                .context("installing worker parent-death signal");
+        }
+    }
+
+    if !parent_process_matches(expected_parent_pid) {
+        anyhow::bail!(
+            "worker parent changed before initialization: expected {expected_parent_pid}, current {}",
+            unsafe { libc::getppid() }
+        );
+    }
+    std::thread::Builder::new()
+        .name("perch-parent-watch".into())
+        .spawn(move || loop {
+            std::thread::sleep(Duration::from_millis(100));
+            if !parent_process_matches(expected_parent_pid) {
+                // The daemon cannot supervise or reclaim this process
+                // anymore. Avoid running application destructors in an
+                // uncertain post-parent state.
+                unsafe { libc::_exit(1) };
+            }
+        })
+        .context("spawning worker parent watchdog")?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn bind_to_parent_process(_expected_parent_pid: u32) -> anyhow::Result<()> {
+    anyhow::bail!("daemon parent binding is unsupported on this platform")
+}
+
+fn attach_to_cgroup(cgroup_procs: &std::path::Path) -> anyhow::Result<()> {
+    if cgroup_procs.file_name().and_then(|name| name.to_str()) != Some("cgroup.procs") {
+        return Err(anyhow::anyhow!(
+            "worker cgroup membership path must name cgroup.procs"
+        ));
+    }
+    std::fs::write(cgroup_procs, std::process::id().to_string()).map_err(|error| {
+        anyhow::anyhow!(
+            "attaching worker {} to cgroup through {}: {error}",
+            std::process::id(),
+            cgroup_procs.display()
+        )
+    })?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{attach_to_cgroup, Cli};
+    use clap::Parser;
+
+    #[test]
+    fn attaches_before_runtime_start_only_through_cgroup_procs() {
+        let temp = tempfile::tempdir().unwrap();
+        let procs = temp.path().join("cgroup.procs");
+        attach_to_cgroup(&procs).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(procs).unwrap(),
+            std::process::id().to_string()
+        );
+        assert!(attach_to_cgroup(&temp.path().join("other")).is_err());
+    }
+
+    #[test]
+    fn dedicated_worker_requires_an_exact_library_but_shard_does_not() {
+        assert!(Cli::try_parse_from([
+            "perch-worker",
+            "--deployment",
+            "alpha",
+            "--perry-runtime",
+            "/providers/runtime.so",
+            "--perry-stdlib",
+            "/providers/stdlib.so",
+        ])
+        .is_err());
+        assert!(Cli::try_parse_from([
+            "perch-worker",
+            "--deployment",
+            "alpha",
+            "--dylib",
+            "/immutable/alpha/app.so",
+            "--perry-runtime",
+            "/providers/runtime.so",
+            "--perry-stdlib",
+            "/providers/stdlib.so",
+        ])
+        .is_ok());
+        assert!(Cli::try_parse_from([
+            "perch-worker",
+            "--shard-id",
+            "0",
+            "--perry-runtime",
+            "/providers/runtime.so",
+            "--perry-stdlib",
+            "/providers/stdlib.so",
+        ])
+        .is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn parent_identity_check_uses_the_exact_os_parent() {
+        let parent = unsafe { libc::getppid() } as u32;
+        assert!(super::parent_process_matches(parent));
+        assert!(!super::parent_process_matches(0));
+        assert!(!super::parent_process_matches(parent.saturating_add(1)));
+    }
 }

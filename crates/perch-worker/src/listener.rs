@@ -17,8 +17,8 @@
 //! Max frame size is `perch_host_abi::MAX_FRAME_SIZE`. Frames larger than
 //! that get a `ProtocolError` reply and the connection is closed.
 
-use crate::host::DeploymentHost;
 use anyhow::{anyhow, Context, Result};
+use perch_app_host::host::DeploymentHost;
 use perch_host_abi::{
     AbiError, ClientHello, WorkerRequest, WorkerResponse, ABI_VERSION, MAX_FRAME_SIZE,
 };
@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 /// Listens for daemon connections on a Unix socket and dispatches to a
@@ -35,14 +36,11 @@ pub struct Listener {
     socket_path: PathBuf,
     listener: UnixListener,
     host: Arc<DeploymentHost>,
+    shutdown: CancellationToken,
 }
 
 impl Listener {
-    pub fn bind(
-        deployment: &str,
-        socket_path: &Path,
-        host: DeploymentHost,
-    ) -> Result<Self> {
+    pub fn bind(deployment: &str, socket_path: &Path, host: DeploymentHost) -> Result<Self> {
         // Remove any stale socket from a previous run.
         if socket_path.exists() {
             std::fs::remove_file(socket_path)
@@ -68,6 +66,7 @@ impl Listener {
             socket_path: socket_path.to_path_buf(),
             listener,
             host: Arc::new(host),
+            shutdown: CancellationToken::new(),
         })
     }
 
@@ -78,18 +77,26 @@ impl Listener {
             socket_path,
             listener,
             host,
+            shutdown,
         } = self;
 
         // Track accepted connections so we can drain them on shutdown
         // later. For the MVP we don't actively drain on SIGTERM; we just
         // let the current connection handlers finish naturally.
         loop {
-            match listener.accept().await {
+            let accepted = tokio::select! {
+                biased;
+                _ = shutdown.cancelled() => break,
+                accepted = listener.accept() => accepted,
+            };
+            match accepted {
                 Ok((stream, _addr)) => {
                     let host = host.clone();
                     let deployment = deployment.clone();
+                    let shutdown = shutdown.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = handle_connection(&deployment, stream, host).await {
+                        if let Err(e) = handle_connection(&deployment, stream, host, shutdown).await
+                        {
                             warn!(deployment = %deployment, error = ?e, "connection error");
                         }
                     });
@@ -109,6 +116,17 @@ impl Listener {
                 return Ok(());
             }
         }
+        drop(listener);
+        match std::fs::remove_file(&socket_path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("removing worker socket {:?}", socket_path));
+            }
+        }
+        info!(deployment = %deployment, "worker listener shut down");
+        Ok(())
     }
 }
 
@@ -116,6 +134,7 @@ async fn handle_connection(
     deployment: &str,
     stream: UnixStream,
     host: Arc<DeploymentHost>,
+    shutdown: CancellationToken,
 ) -> Result<()> {
     let (read_half, write_half) = stream.into_split();
     let mut reader = read_half;
@@ -123,8 +142,8 @@ async fn handle_connection(
 
     // First message must be a Hello.
     let first = read_frame(&mut reader).await?;
-    let req: WorkerRequest = serde_json::from_slice(&first)
-        .context("parsing first frame as WorkerRequest")?;
+    let req: WorkerRequest =
+        serde_json::from_slice(&first).context("parsing first frame as WorkerRequest")?;
 
     match req {
         WorkerRequest::Hello(ClientHello {
@@ -139,13 +158,11 @@ async fn handle_connection(
                     ),
                 };
                 write_frame(&mut writer, &err).await?;
-                return Err(
-                    AbiError::VersionMismatch {
-                        client: abi_version,
-                        worker: ABI_VERSION,
-                    }
-                    .into(),
-                );
+                return Err(AbiError::VersionMismatch {
+                    client: abi_version,
+                    worker: ABI_VERSION,
+                }
+                .into());
             }
 
             debug!(
@@ -177,8 +194,7 @@ async fn handle_connection(
     // socket connection simultaneously — the only serialization point
     // becomes the plugin lock inside DeploymentHost::dispatch (which is
     // necessary for Perry's GC + arena), not the network layer.
-    let (resp_tx, mut resp_rx) =
-        tokio::sync::mpsc::channel::<WorkerResponse>(128);
+    let (resp_tx, mut resp_rx) = tokio::sync::mpsc::channel::<WorkerResponse>(128);
 
     let writer_deployment = deployment.to_string();
     let writer_handle = tokio::spawn(async move {
@@ -208,14 +224,14 @@ async fn handle_connection(
             }
         };
 
-        let req: WorkerRequest = serde_json::from_slice(&frame)
-            .context("parsing WorkerRequest")?;
+        let req: WorkerRequest = serde_json::from_slice(&frame).context("parsing WorkerRequest")?;
 
         // Shutdown is a special case — handled inline so we can return.
         if matches!(req, WorkerRequest::Shutdown { .. }) {
             let _ = resp_tx.send(WorkerResponse::Goodbye).await;
             drop(resp_tx);
             let _ = writer_handle.await;
+            shutdown.cancel();
             return Ok(());
         }
 
@@ -230,7 +246,7 @@ async fn handle_connection(
     }
 }
 
-async fn process_request(
+pub(crate) async fn process_request(
     req: WorkerRequest,
     host: Arc<DeploymentHost>,
     deployment: &str,
@@ -241,6 +257,7 @@ async fn process_request(
         },
         WorkerRequest::Dispatch {
             request_id,
+            runtime_id: _,
             request,
         } => match host.dispatch(request).await {
             Ok(response) => WorkerResponse::DispatchResult {
@@ -263,6 +280,7 @@ async fn process_request(
         },
         WorkerRequest::Cron {
             request_id,
+            runtime_id: _,
             context,
         } => match host.fire_cron(context).await {
             Ok(()) => WorkerResponse::CronResult {
@@ -278,6 +296,7 @@ async fn process_request(
         },
         WorkerRequest::Queue {
             request_id,
+            runtime_id: _,
             message,
         } => match host.deliver_queue_message(message).await {
             Ok(disposition) => WorkerResponse::QueueResult {
@@ -291,6 +310,11 @@ async fn process_request(
                 error: Some(e.to_string()),
             },
         },
+        WorkerRequest::LoadDeployment { .. } | WorkerRequest::UnloadDeployment { .. } => {
+            WorkerResponse::ProtocolError {
+                message: "deployment control is unavailable in a dedicated worker".to_string(),
+            }
+        }
         WorkerRequest::Shutdown { .. } => {
             // Handled in the reader loop before reaching here.
             WorkerResponse::Goodbye
@@ -302,7 +326,7 @@ async fn process_request(
 // Framing
 // ---------------------------------------------------------------------------
 
-async fn read_frame(stream: &mut tokio::net::unix::OwnedReadHalf) -> Result<Vec<u8>> {
+pub(crate) async fn read_frame(stream: &mut tokio::net::unix::OwnedReadHalf) -> Result<Vec<u8>> {
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
     let len = u32::from_be_bytes(len_buf) as usize;
@@ -316,7 +340,7 @@ async fn read_frame(stream: &mut tokio::net::unix::OwnedReadHalf) -> Result<Vec<
     Ok(body)
 }
 
-async fn write_frame<T: serde::Serialize>(
+pub(crate) async fn write_frame<T: serde::Serialize>(
     stream: &mut tokio::net::unix::OwnedWriteHalf,
     payload: &T,
 ) -> Result<()> {

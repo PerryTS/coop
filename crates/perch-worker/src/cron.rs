@@ -8,9 +8,9 @@
 //! path as daemon-initiated cron dispatches, keeping the call model
 //! uniform.
 
-use crate::host::DeploymentHost;
 use anyhow::Result;
 use cron::Schedule;
+use perch_app_host::host::DeploymentHost;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -25,10 +25,7 @@ pub struct CronEntry {
 
 /// Start background cron tasks for each configured cron expression.
 /// Returns join handles so the caller can abort them on shutdown.
-pub fn start_crons(
-    entries: Vec<CronEntry>,
-    host: Arc<DeploymentHost>,
-) -> Vec<JoinHandle<()>> {
+pub fn start_crons(entries: Vec<CronEntry>, host: Arc<DeploymentHost>) -> Vec<JoinHandle<()>> {
     let mut handles = Vec::new();
 
     for entry in entries {
@@ -71,7 +68,9 @@ pub fn start_crons(
                     }
                 };
 
-                let wait = (next - now).to_std().unwrap_or(std::time::Duration::from_secs(1));
+                let wait = (next - now)
+                    .to_std()
+                    .unwrap_or(std::time::Duration::from_secs(1));
                 debug!(
                     file = %file,
                     next = %next,

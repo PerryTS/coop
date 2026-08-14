@@ -1,40 +1,49 @@
-// Build script for perch-worker.
-//
-// On both platforms we need every perry-runtime symbol to be available
-// for dlopen'd deployment dylibs to resolve at flat-namespace lookup time.
-// Cargo's release linker dead-strips unreferenced symbols by default;
-// since perry-runtime has 800+ exports and any of them might be needed
-// by a future deployment, we'd be playing whack-a-mole forever if we
-// only kept ones referenced by main.rs.
-//
-// Solution:
-// - Linux: -rdynamic (puts all symbols in dynamic table) +
-//   --no-as-needed (link the whole rlib even if no symbols are used).
-// - macOS: by default symbols are in the dynamic table, but the linker
-//   dead-strips. -Wl,-export_dynamic + force loading via the symbol_pin
-//   module gets us most of the way; the remaining symbols are pinned
-//   manually in symbol_pin.rs (which is now a hand-curated list of the
-//   symbols our deployments actually use).
-//
-// The "right" fix for total robustness is to build perry-runtime as a
-// staticlib and force-load it via -Wl,-force_load (macOS) or
-// -Wl,--whole-archive (Linux). That requires a separate cargo invocation
-// to produce the .a file. For now we accept the maintenance burden of
-// the symbol_pin list and update it when new deployments need new
-// symbols.
+//! Embed the Perry ABI version without linking Perry into the host.
+
+use std::env;
+use std::fs;
+use std::path::PathBuf;
 
 fn main() {
-    #[cfg(target_os = "linux")]
-    {
-        // Export all symbols to the dynamic symbol table.
-        println!("cargo:rustc-link-arg=-rdynamic");
-        // Don't drop sections that aren't directly referenced.
-        println!("cargo:rustc-link-arg=-Wl,--no-gc-sections");
-    }
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("manifest dir"));
+    let perry_workspace = manifest_dir.join("../../.perry-main/Cargo.toml");
+    let perry_lock = manifest_dir.join("../../perry-main.lock");
+    println!("cargo:rerun-if-changed={}", perry_workspace.display());
+    println!("cargo:rerun-if-changed={}", perry_lock.display());
 
-    // macOS: no extra flags needed at the build.rs level. The
-    // symbol_pin manual list covers the symbols our deployments need,
-    // and macOS's default flat-namespace lookup at dlopen time finds
-    // anything pinned. If a deployment hits a missing symbol, add it
-    // to symbol_pin.rs.
+    let contents = fs::read_to_string(&perry_workspace)
+        .unwrap_or_else(|error| panic!("reading {}: {error}", perry_workspace.display()));
+    let workspace_package = contents
+        .split_once("[workspace.package]")
+        .map(|(_, tail)| tail)
+        .expect("Perry workspace has [workspace.package]");
+    let version = workspace_package
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("version = \"")
+                .and_then(|value| value.strip_suffix('"'))
+        })
+        .expect("Perry workspace package has a version");
+
+    let lock = fs::read_to_string(&perry_lock)
+        .unwrap_or_else(|error| panic!("reading {}: {error}", perry_lock.display()));
+    let locked_version = lock_value(&lock, "version").expect("Perry lock has a version");
+    let commit = lock_value(&lock, "commit").expect("Perry lock has a commit");
+    assert_eq!(
+        version, locked_version,
+        "Perry worktree does not match perry-main.lock"
+    );
+    assert_eq!(commit.len(), 40, "Perry lock commit must be a full SHA-1");
+
+    println!("cargo:rustc-env=PERCH_PERRY_RUNTIME_VERSION={version}");
+    println!("cargo:rustc-env=PERCH_PERRY_RUNTIME_COMMIT={commit}");
+}
+
+fn lock_value<'a>(contents: &'a str, key: &str) -> Option<&'a str> {
+    contents.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix(&format!("{key} = \""))
+            .and_then(|value| value.strip_suffix('"'))
+    })
 }
