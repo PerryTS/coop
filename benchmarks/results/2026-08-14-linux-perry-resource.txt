@@ -1,0 +1,214 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/lima-colima/perch-linux/crates/perch-worker/Cargo.toml
+workspace: /mnt/lima-colima/perch-linux/Cargo.toml
+warning: unused import: `error`
+  --> crates/perch-daemon/src/cdn/mod.rs:21:22
+   |
+21 | use tracing::{debug, error, info, warn};
+   |                      ^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::sync::Arc`
+  --> crates/perch-daemon/src/tls.rs:25:5
+   |
+25 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: function `is_bunny_enabled` is never used
+  --> crates/perch-daemon/src/cdn/mod.rs:24:8
+   |
+24 | pub fn is_bunny_enabled(config: &RuntimeConfig) -> bool {
+   |        ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `should_use_bunny` is never used
+  --> crates/perch-daemon/src/cdn/mod.rs:29:8
+   |
+29 | pub fn should_use_bunny(runtime_cfg: &RuntimeConfig, deployment: &DeploymentConfig) -> bool {
+   |        ^^^^^^^^^^^^^^^^
+
+warning: method `remove_hostname` is never used
+   --> crates/perch-daemon/src/cdn/bunny.rs:214:18
+    |
+ 65 | impl BunnyClient {
+    | ---------------- method in this implementation
+...
+214 |     pub async fn remove_hostname(&self, zone_id: i64, hostname: &str) -> Result<()> {
+    |                  ^^^^^^^^^^^^^^^
+
+warning: constant `BUNNY_EDGE_IPS_URL` is never used
+  --> crates/perch-daemon/src/cdn/ip_allowlist.rs:21:7
+   |
+21 | const BUNNY_EDGE_IPS_URL: &str = "https://bunnycdn.com/api/system/edgeserverlist";
+   |       ^^^^^^^^^^^^^^^^^^
+
+warning: constant `REFRESH_INTERVAL` is never used
+  --> crates/perch-daemon/src/cdn/ip_allowlist.rs:24:7
+   |
+24 | const REFRESH_INTERVAL: Duration = Duration::from_secs(24 * 3600);
+   |       ^^^^^^^^^^^^^^^^
+
+warning: struct `EdgeIpAllowlist` is never constructed
+  --> crates/perch-daemon/src/cdn/ip_allowlist.rs:29:12
+   |
+29 | pub struct EdgeIpAllowlist {
+   |            ^^^^^^^^^^^^^^^
+
+warning: associated items `start`, `contains`, and `len` are never used
+  --> crates/perch-daemon/src/cdn/ip_allowlist.rs:38:18
+   |
+33 | impl EdgeIpAllowlist {
+   | -------------------- associated items in this implementation
+...
+38 |     pub async fn start() -> Result<Self> {
+   |                  ^^^^^
+...
+70 |     pub fn contains(&self, ip: &IpAddr) -> bool {
+   |            ^^^^^^^^
+...
+75 |     pub fn len(&self) -> usize {
+   |            ^^^
+
+warning: function `fetch_edge_ips` is never used
+  --> crates/perch-daemon/src/cdn/ip_allowlist.rs:88:10
+   |
+88 | async fn fetch_edge_ips() -> Result<HashSet<IpAddr>> {
+   |          ^^^^^^^^^^^^^^
+
+warning: method `handler_tool_map` is never used
+    --> crates/perch-daemon/src/config.rs:1352:12
+     |
+1147 | impl DeploymentConfig {
+     | --------------------- method in this implementation
+...
+1352 |     pub fn handler_tool_map(&self) -> HashMap<(String, String), String> {
+     |            ^^^^^^^^^^^^^^^^
+
+warning: method `deliver_queue` is never used
+    --> crates/perch-daemon/src/deployments.rs:1411:14
+     |
+1366 | impl DeploymentInvocationTarget {
+     | ------------------------------- method in this implementation
+...
+1411 |     async fn deliver_queue(
+     |              ^^^^^^^^^^^^^
+
+warning: associated items `new`, `deliver_queue`, and `deployment_source_sha256` are never used
+    --> crates/perch-daemon/src/deployments.rs:1555:12
+     |
+1554 | impl DeploymentSupervisor {
+     | ------------------------- associated items in this implementation
+1555 |     pub fn new(runtime_cfg: Arc<RuntimeConfig>) -> Self {
+     |            ^^^
+...
+1813 |     pub async fn deliver_queue(
+     |                  ^^^^^^^^^^^^^
+...
+5220 |     fn deployment_source_sha256(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `runtime_cfg` is never read
+  --> crates/perch-daemon/src/listener.rs:30:9
+   |
+28 | pub struct ListenerState {
+   |            ------------- field in this struct
+29 |     pub supervisor: Arc<DeploymentSupervisor>,
+30 |     pub runtime_cfg: Arc<RuntimeConfig>,
+   |         ^^^^^^^^^^^
+   |
+   = note: `ListenerState` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: struct `ProxyInfo` is never constructed
+  --> crates/perch-daemon/src/proxy_headers.rs:19:12
+   |
+19 | pub struct ProxyInfo {
+   |            ^^^^^^^^^
+
+warning: function `extract` is never used
+  --> crates/perch-daemon/src/proxy_headers.rs:34:8
+   |
+34 | pub fn extract(headers: &axum::http::HeaderMap, peer_ip: IpAddr, trusted: bool) -> ProxyInfo {
+   |        ^^^^^^^
+
+warning: fields `handler` and `tool_name` are never read
+  --> crates/perch-daemon/src/router.rs:54:9
+   |
+49 |     WorkerDispatch {
+   |     -------------- fields in this variant
+...
+54 |         handler: HandlerConfig,
+   |         ^^^^^^^
+...
+57 |         tool_name: String,
+   |         ^^^^^^^^^
+   |
+   = note: `RouteMatch` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated function `new` is never used
+   --> crates/perch-daemon/src/router.rs:120:12
+    |
+119 | impl RouterState {
+    | ---------------- associated function in this implementation
+120 |     pub fn new() -> Self {
+    |            ^^^
+
+warning: function `provision_and_migrate` is never used
+  --> crates/perch-daemon/src/schema.rs:32:14
+   |
+32 | pub async fn provision_and_migrate(
+   |              ^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `deployment` and `worker_name` are never used
+   --> crates/perch-daemon/src/worker_client.rs:326:12
+    |
+220 | impl WorkerClient {
+    | ----------------- methods in this implementation
+...
+326 |     pub fn deployment(&self) -> &str {
+    |            ^^^^^^^^^^
+...
+330 |     pub fn worker_name(&self) -> &str {
+    |            ^^^^^^^^^^^
+
+warning: the `activators:` in this pattern is redundant
+    --> crates/perch-daemon/src/deployments.rs:2188:13
+     |
+2188 |             activators: mut activators,
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use shorthand field pattern: `mut activators`
+     |
+     = note: `#[warn(non_shorthand_field_patterns)]` on by default
+
+warning: the `activators:` in this pattern is redundant
+    --> crates/perch-daemon/src/deployments.rs:2358:13
+     |
+2358 |             activators: mut activators,
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use shorthand field pattern: `mut activators`
+
+warning: `perch-daemon` (bin "perch") generated 22 warnings (run `cargo fix --bin "perch" -p perch-daemon` to apply 4 suggestions)
+   Compiling perch-daemon v0.0.1 (/mnt/lima-colima/perch-linux/crates/perch-daemon)
+    Finished `release` profile [optimized] target(s) in 24.27s
+     Running tests/resource_benchmark.rs (target/release/deps/resource_benchmark-a7655b0c00be42f6)
+
+running 1 test
+daemon=/mnt/lima-colima/perch-linux/target/release/perch
+platform=linux-aarch64
+trials=2
+requests=2000
+preload_concurrency=4
+cgroup_root=/sys/fs/cgroup/user.slice/user-501.slice/perch-codex-20260814/benchmarks
+fixture_parent=/mnt/lima-colima/perch-linux/target/perch-resource-benchmark
+apps=1 trial=1 artifact_state=fresh startup_ms=703.714 ready_rss_mib=22.863 ready_pss_mib=21.522 ready_private_dirty_mib=3.816 ready_cgroup_mib=4.555 warm_all_ms=6.903 warm_rss_mib=24.953 warm_pss_mib=23.550 warm_private_dirty_mib=4.469 warm_cgroup_mib=5.266 requests=2000 workload_ms=170.995 server_cpu_ms=180.000 post_workload_rss_mib=28.992 post_workload_pss_mib=27.589 post_workload_private_dirty_mib=8.508 post_workload_cgroup_mib=9.074 cgroup_peak_mib=21.500
+apps=1 trial=2 artifact_state=restart startup_ms=702.272 ready_rss_mib=22.863 ready_pss_mib=21.470 ready_private_dirty_mib=3.828 ready_cgroup_mib=4.547 warm_all_ms=10.245 warm_rss_mib=24.945 warm_pss_mib=23.552 warm_private_dirty_mib=4.473 warm_cgroup_mib=5.266 requests=2000 workload_ms=152.682 server_cpu_ms=130.000 post_workload_rss_mib=28.941 post_workload_pss_mib=27.548 post_workload_private_dirty_mib=8.469 post_workload_cgroup_mib=9.312 cgroup_peak_mib=21.500
+RESULT apps=1 fresh_artifact_startup_ms=703.714 restart_startup_median_ms=702.272 ready_rss_median_mib=22.863 ready_pss_median_mib=21.522 ready_private_dirty_median_mib=3.828 ready_cgroup_median_mib=4.555 warm_all_median_ms=10.245 warm_rss_median_mib=24.953 warm_pss_median_mib=23.552 warm_private_dirty_median_mib=4.473 warm_cgroup_median_mib=5.266 requests=2000 workload_median_ms=170.995 server_cpu_median_ms=180.000 requests_per_second=11696.228 server_cpu_us_per_request=90.000 post_workload_rss_median_mib=28.992 post_workload_pss_median_mib=27.589 post_workload_private_dirty_median_mib=8.508 post_workload_cgroup_median_mib=9.312 cgroup_peak_median_mib=21.500
+apps=10 trial=1 artifact_state=fresh startup_ms=796.974 ready_rss_mib=25.184 ready_pss_mib=23.780 ready_private_dirty_mib=6.137 ready_cgroup_mib=7.434 warm_all_ms=12.709 warm_rss_mib=32.410 warm_pss_mib=31.007 warm_private_dirty_mib=11.926 warm_cgroup_mib=12.980 requests=2000 workload_ms=133.807 server_cpu_ms=150.000 post_workload_rss_mib=36.230 post_workload_pss_mib=34.827 post_workload_private_dirty_mib=15.746 post_workload_cgroup_mib=16.844 cgroup_peak_mib=21.852
+apps=10 trial=2 artifact_state=restart startup_ms=811.081 ready_rss_mib=25.184 ready_pss_mib=23.780 ready_private_dirty_mib=6.137 ready_cgroup_mib=7.535 warm_all_ms=33.450 warm_rss_mib=32.418 warm_pss_mib=31.015 warm_private_dirty_mib=11.934 warm_cgroup_mib=13.082 requests=2000 workload_ms=186.136 server_cpu_ms=230.000 post_workload_rss_mib=36.734 post_workload_pss_mib=35.331 post_workload_private_dirty_mib=16.250 post_workload_cgroup_mib=17.348 cgroup_peak_mib=22.117
+RESULT apps=10 fresh_artifact_startup_ms=796.974 restart_startup_median_ms=811.081 ready_rss_median_mib=25.184 ready_pss_median_mib=23.780 ready_private_dirty_median_mib=6.137 ready_cgroup_median_mib=7.535 warm_all_median_ms=33.450 warm_rss_median_mib=32.418 warm_pss_median_mib=31.015 warm_private_dirty_median_mib=11.934 warm_cgroup_median_mib=13.082 requests=2000 workload_median_ms=186.136 server_cpu_median_ms=230.000 requests_per_second=10744.849 server_cpu_us_per_request=115.000 post_workload_rss_median_mib=36.734 post_workload_pss_median_mib=35.331 post_workload_private_dirty_median_mib=16.250 post_workload_cgroup_median_mib=17.348 cgroup_peak_median_mib=22.117
+apps=100 trial=1 artifact_state=fresh startup_ms=1265.501 ready_rss_mib=58.812 ready_pss_mib=57.409 ready_private_dirty_mib=39.766 ready_cgroup_mib=44.207 warm_all_ms=238.845 warm_rss_mib=100.492 warm_pss_mib=99.089 warm_private_dirty_mib=80.008 warm_cgroup_mib=83.988 requests=2000 workload_ms=80.101 server_cpu_ms=180.000 post_workload_rss_mib=103.430 post_workload_pss_mib=102.026 post_workload_private_dirty_mib=82.945 post_workload_cgroup_mib=86.727 cgroup_peak_mib=88.105
+apps=100 trial=2 artifact_state=restart startup_ms=1441.629 ready_rss_mib=58.574 ready_pss_mib=57.181 ready_private_dirty_mib=39.539 ready_cgroup_mib=43.668 warm_all_ms=278.568 warm_rss_mib=100.684 warm_pss_mib=99.290 warm_private_dirty_mib=80.211 warm_cgroup_mib=84.320 requests=2000 workload_ms=122.501 server_cpu_ms=190.000 post_workload_rss_mib=103.793 post_workload_pss_mib=102.399 post_workload_private_dirty_mib=83.320 post_workload_cgroup_mib=87.023 cgroup_peak_mib=88.566
+RESULT apps=100 fresh_artifact_startup_ms=1265.501 restart_startup_median_ms=1441.629 ready_rss_median_mib=58.812 ready_pss_median_mib=57.409 ready_private_dirty_median_mib=39.766 ready_cgroup_median_mib=44.207 warm_all_median_ms=278.568 warm_rss_median_mib=100.684 warm_pss_median_mib=99.290 warm_private_dirty_median_mib=80.211 warm_cgroup_median_mib=84.320 requests=2000 workload_median_ms=122.501 server_cpu_median_ms=190.000 requests_per_second=16326.335 server_cpu_us_per_request=95.000 post_workload_rss_median_mib=103.793 post_workload_pss_median_mib=102.399 post_workload_private_dirty_median_mib=83.320 post_workload_cgroup_median_mib=87.023 cgroup_peak_median_mib=88.566
+test measure_in_process_startup_and_rss ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 15.90s
+

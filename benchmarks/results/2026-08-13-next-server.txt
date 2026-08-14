@@ -1,0 +1,10 @@
+# Apple M1 Max (10 physical cores, 64 GiB), macOS 26.5
+# Node 26.5.1, Next 16.3.0, Perry 0.5.1503, celld 3f22aedd
+# 3 trials, 2,000 validated requests/trial, concurrency 20
+# Machine load was abnormally high; see BENCHMARKS.md for scope and caveats.
+
+RESULT name="Perch Perry NextResponse route" trials=3 load1_start_median=41.69 load1_end_median=41.71 startup_median_ms=1655.629 startup_cpu_median_ms=530.000 ready_rss_median_mib=36.469 first_request_median_ms=4.553 usable_cold_start_median_ms=1658.637 first_request_cpu_median_ms=0.000 warm_rss_median_mib=39.594 requests=2000 concurrency=20 workload_median_ms=1788.651 requests_per_second=1118.161 latency_p50_median_ms=10.373 latency_p99_median_ms=78.676 server_cpu_us_per_request=385.000 post_rss_median_mib=92.453
+
+RESULT name="Node Next.js standalone" trials=3 load1_start_median=43.38 load1_end_median=43.38 startup_median_ms=646.982 startup_cpu_median_ms=300.000 ready_rss_median_mib=98.578 first_request_median_ms=107.156 usable_cold_start_median_ms=849.092 first_request_cpu_median_ms=60.000 warm_rss_median_mib=111.859 requests=2000 concurrency=20 workload_median_ms=4427.968 requests_per_second=451.674 latency_p50_median_ms=33.269 latency_p99_median_ms=172.036 server_cpu_us_per_request=840.000 post_rss_median_mib=247.344
+
+RESULT name="celld" trials=3 load1_start_median=38.91 load1_end_median=39.08 startup_median_ms=16.228 startup_cpu_median_ms=20.000 ready_rss_median_mib=22.406 first_request_median_ms=1753.972 usable_cold_start_median_ms=1770.199 first_request_cpu_median_ms=740.000 warm_rss_median_mib=42.203 requests=2000 concurrency=20 workload_median_ms=234.628 requests_per_second=8524.124 latency_p50_median_ms=1.347 latency_p99_median_ms=20.788 server_cpu_us_per_request=140.000 post_rss_median_mib=100.484

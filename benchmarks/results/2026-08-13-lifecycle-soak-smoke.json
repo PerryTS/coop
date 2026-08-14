@@ -1,0 +1,224 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-13T19:19:48.998Z",
+  "platform": "arm64-darwin",
+  "loadAverage": [
+    9.984375,
+    15.9228515625,
+    25.43603515625
+  ],
+  "trials": [
+    {
+      "trial": 1,
+      "loadAverage": 9.984375,
+      "scenarios": [
+        {
+          "name": "cold_start_and_activation",
+          "wallMs": 5153.562167,
+          "cpuMs": 2580,
+          "peakTreeRssKib": 316816,
+          "finalTreeRssKib": 39520,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1263.644834,
+            "snapshot": 6.40025,
+            "compiler": 1283.615917,
+            "validation": 63.004833,
+            "package": 28.544625,
+            "publication": 4.783125
+          },
+          "compilerPeakRssBytes": 243105792,
+          "codegenCache": {
+            "hits": 0,
+            "misses": 3
+          },
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": true
+        },
+        {
+          "name": "warm_no_op",
+          "wallMs": 177.89687500000036,
+          "cpuMs": 10,
+          "peakTreeRssKib": 40320,
+          "finalTreeRssKib": 40320,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1.9780829999999998
+          },
+          "compilerPeakRssBytes": null,
+          "codegenCache": null,
+          "packageCacheHit": true,
+          "compiledCodeReuse": false,
+          "compilerSpawned": false
+        },
+        {
+          "name": "one_module_change",
+          "wallMs": 5344.28775,
+          "cpuMs": 630,
+          "peakTreeRssKib": 312064,
+          "finalTreeRssKib": 41920,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1.039458,
+            "snapshot": 4.368292,
+            "compiler": 2160.756125,
+            "validation": 88.585792,
+            "package": 36.569417,
+            "publication": 5.17975
+          },
+          "compilerPeakRssBytes": 269418496,
+          "codegenCache": {
+            "hits": 1,
+            "misses": 2
+          },
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": true
+        },
+        {
+          "name": "dependency_change",
+          "wallMs": 9101.236417,
+          "cpuMs": 780,
+          "peakTreeRssKib": 333824,
+          "finalTreeRssKib": 42688,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 3.021125,
+            "snapshot": 9.790458000000001,
+            "compiler": 3952.152083,
+            "validation": 60.255791,
+            "package": 30.596999999999998,
+            "publication": 4.5431669999999995
+          },
+          "compilerPeakRssBytes": 290209792,
+          "codegenCache": {
+            "hits": 0,
+            "misses": 3
+          },
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": true
+        },
+        {
+          "name": "static_only_change",
+          "wallMs": 304.63033299999734,
+          "cpuMs": 30,
+          "peakTreeRssKib": 43136,
+          "finalTreeRssKib": 43024,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1.768834,
+            "snapshot": 3.9655000000000005,
+            "compiler": 1.6025,
+            "validation": 59.746834,
+            "package": 34.17825,
+            "publication": 4.9483749999999995
+          },
+          "compilerPeakRssBytes": null,
+          "codegenCache": null,
+          "packageCacheHit": false,
+          "compiledCodeReuse": true,
+          "compilerSpawned": false
+        },
+        {
+          "name": "rollback",
+          "wallMs": 175.8295419999995,
+          "cpuMs": 20,
+          "peakTreeRssKib": 43056,
+          "finalTreeRssKib": 43056,
+          "finalTreePssKib": null,
+          "phasesMs": {},
+          "compilerPeakRssBytes": null,
+          "codegenCache": null,
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": false
+        }
+      ],
+      "replacementSoak": {
+        "cycles": 5,
+        "wallMs": 1179.2800840000018,
+        "trafficRequests": 777,
+        "trafficErrors": 0,
+        "compilerSpawned": false,
+        "baseline": {
+          "cycle": 0,
+          "rssKib": 43056,
+          "pssKib": null,
+          "cpuMs": 2340,
+          "threads": 13,
+          "fds": 13
+        },
+        "final": {
+          "cycle": 5,
+          "rssKib": 43840,
+          "pssKib": null,
+          "cpuMs": 2760,
+          "threads": 13,
+          "fds": 14
+        },
+        "checkpoints": [
+          {
+            "cycle": 0,
+            "rssKib": 43056,
+            "pssKib": null,
+            "cpuMs": 2340,
+            "threads": 13,
+            "fds": 13
+          },
+          {
+            "cycle": 5,
+            "rssKib": 43840,
+            "pssKib": null,
+            "cpuMs": 2760,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "10bf5574902605e11d143f3a65fcba3c1a01148999b5787d5de2146d8411952f",
+            "activationMs": 0.146917
+          }
+        ],
+        "artifactNamespace": "../../../../var/folders/8v/09vl257j2_v70v2k77gh01n00000gn/T/perch-compile-benchmark-AEQ2cn/compiled/compile-small"
+      }
+    }
+  ],
+  "medians": {
+    "cold_start_and_activation": {
+      "wallMs": 5153.562167,
+      "cpuMs": 2580,
+      "peakTreeRssKib": 316816,
+      "compilerPeakRssBytes": 243105792
+    },
+    "warm_no_op": {
+      "wallMs": 177.89687500000036,
+      "cpuMs": 10,
+      "peakTreeRssKib": 40320,
+      "compilerPeakRssBytes": null
+    },
+    "one_module_change": {
+      "wallMs": 5344.28775,
+      "cpuMs": 630,
+      "peakTreeRssKib": 312064,
+      "compilerPeakRssBytes": 269418496
+    },
+    "dependency_change": {
+      "wallMs": 9101.236417,
+      "cpuMs": 780,
+      "peakTreeRssKib": 333824,
+      "compilerPeakRssBytes": 290209792
+    },
+    "static_only_change": {
+      "wallMs": 304.63033299999734,
+      "cpuMs": 30,
+      "peakTreeRssKib": 43136,
+      "compilerPeakRssBytes": null
+    },
+    "rollback": {
+      "wallMs": 175.8295419999995,
+      "cpuMs": 20,
+      "peakTreeRssKib": 43056,
+      "compilerPeakRssBytes": null
+    }
+  }
+}

@@ -1,0 +1,10 @@
+name = "worker-benchmark"
+version = "0.1.0"
+
+[hosts]
+domains = ["benchmark.local"]
+
+[[handlers]]
+file = "handlers/main.ts"
+path = "/api/benchmark"
+method = "GET"

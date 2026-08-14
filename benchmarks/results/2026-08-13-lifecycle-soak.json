@@ -1,0 +1,495 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-13T19:21:43.152Z",
+  "platform": "arm64-darwin",
+  "loadAverage": [
+    10.666015625,
+    14.35400390625,
+    23.611328125
+  ],
+  "trials": [
+    {
+      "trial": 1,
+      "loadAverage": 10.666015625,
+      "scenarios": [
+        {
+          "name": "cold_start_and_activation",
+          "wallMs": 5468.479583,
+          "cpuMs": 2060,
+          "peakTreeRssKib": 295776,
+          "finalTreeRssKib": 39552,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1092.022375,
+            "snapshot": 4.436416,
+            "compiler": 1552.60525,
+            "validation": 86.765625,
+            "package": 35.266166,
+            "publication": 5.444708
+          },
+          "compilerPeakRssBytes": 227442688,
+          "codegenCache": {
+            "hits": 0,
+            "misses": 3
+          },
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": true
+        },
+        {
+          "name": "warm_no_op",
+          "wallMs": 207.16625000000022,
+          "cpuMs": 10,
+          "peakTreeRssKib": 40384,
+          "finalTreeRssKib": 40384,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1.9782089999999999
+          },
+          "compilerPeakRssBytes": null,
+          "codegenCache": null,
+          "packageCacheHit": true,
+          "compiledCodeReuse": false,
+          "compilerSpawned": false
+        },
+        {
+          "name": "one_module_change",
+          "wallMs": 6206.769625,
+          "cpuMs": 680,
+          "peakTreeRssKib": 318416,
+          "finalTreeRssKib": 42240,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1.073084,
+            "snapshot": 3.840291,
+            "compiler": 2687.723292,
+            "validation": 66.795042,
+            "package": 54.14125,
+            "publication": 5.321000000000001
+          },
+          "compilerPeakRssBytes": 225591296,
+          "codegenCache": {
+            "hits": 1,
+            "misses": 2
+          },
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": true
+        },
+        {
+          "name": "dependency_change",
+          "wallMs": 11758.518375000001,
+          "cpuMs": 850,
+          "peakTreeRssKib": 329520,
+          "finalTreeRssKib": 34432,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1.19225,
+            "snapshot": 4.992667,
+            "compiler": 5149.599834,
+            "validation": 64.236125,
+            "package": 23.920084000000003,
+            "publication": 5.0819589999999994
+          },
+          "compilerPeakRssBytes": 280330240,
+          "codegenCache": {
+            "hits": 0,
+            "misses": 3
+          },
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": true
+        },
+        {
+          "name": "static_only_change",
+          "wallMs": 331.5342920000003,
+          "cpuMs": 30,
+          "peakTreeRssKib": 35840,
+          "finalTreeRssKib": 34464,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1.3320420000000002,
+            "snapshot": 3.952041,
+            "compiler": 1.6169170000000002,
+            "validation": 63.916708,
+            "package": 29.004459,
+            "publication": 4.79825
+          },
+          "compilerPeakRssBytes": null,
+          "codegenCache": null,
+          "packageCacheHit": false,
+          "compiledCodeReuse": true,
+          "compilerSpawned": false
+        },
+        {
+          "name": "rollback",
+          "wallMs": 191.94395900000018,
+          "cpuMs": 10,
+          "peakTreeRssKib": 34496,
+          "finalTreeRssKib": 34496,
+          "finalTreePssKib": null,
+          "phasesMs": {},
+          "compilerPeakRssBytes": null,
+          "codegenCache": null,
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": false
+        }
+      ],
+      "replacementSoak": {
+        "cycles": 250,
+        "wallMs": 39221.827833,
+        "trafficRequests": 21740,
+        "trafficErrors": 0,
+        "compilerSpawned": false,
+        "runtimeReuses": 250,
+        "baseline": {
+          "cycle": 0,
+          "rssKib": 34496,
+          "pssKib": null,
+          "cpuMs": 1960,
+          "threads": 13,
+          "fds": 13
+        },
+        "final": {
+          "cycle": 250,
+          "rssKib": 42960,
+          "pssKib": null,
+          "cpuMs": 16700,
+          "threads": 13,
+          "fds": 14
+        },
+        "checkpoints": [
+          {
+            "cycle": 0,
+            "rssKib": 34496,
+            "pssKib": null,
+            "cpuMs": 1960,
+            "threads": 13,
+            "fds": 13
+          },
+          {
+            "cycle": 10,
+            "rssKib": 35328,
+            "pssKib": null,
+            "cpuMs": 2640,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "c409d789a97ee0f913f4ab0533b208c387c6120db5460540341c38da3559972f",
+            "activationMs": 0.552084
+          },
+          {
+            "cycle": 20,
+            "rssKib": 35824,
+            "pssKib": null,
+            "cpuMs": 3230,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "7cacfd7f4e50bb2e4cb7e1f4f13a8d581f7c4d6a7ae8b441b053f84bd0aadbca",
+            "activationMs": 0.35079099999999996
+          },
+          {
+            "cycle": 30,
+            "rssKib": 36208,
+            "pssKib": null,
+            "cpuMs": 3880,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "4fc65f5bdc5e2a540c9782049b04703b2f5b0a78165132c71d82cb8c4aaca910",
+            "activationMs": 0.177334
+          },
+          {
+            "cycle": 40,
+            "rssKib": 36592,
+            "pssKib": null,
+            "cpuMs": 4520,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "bae2a2cb23955bd0680707c42fdb24c0cd3ccb0b0d70653afb50769bcf99f34a",
+            "activationMs": 0.811833
+          },
+          {
+            "cycle": 50,
+            "rssKib": 36768,
+            "pssKib": null,
+            "cpuMs": 5310,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "808dd8426ba2d9c23f80134f209846100b61ad83af9b9c6dcb1b1e9fdb208488",
+            "activationMs": 0.377959
+          },
+          {
+            "cycle": 60,
+            "rssKib": 37344,
+            "pssKib": null,
+            "cpuMs": 6030,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "d113a3d59395397c17291d70d5e7fb15b7740f646cb7071f51f28504cc2ef1e7",
+            "activationMs": 0.41133400000000003
+          },
+          {
+            "cycle": 70,
+            "rssKib": 37600,
+            "pssKib": null,
+            "cpuMs": 6610,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "fb36c3b2337c6ecea6752c576c08bd72378100520b69c99c16b980b8a36e4fd8",
+            "activationMs": 0.360833
+          },
+          {
+            "cycle": 80,
+            "rssKib": 37936,
+            "pssKib": null,
+            "cpuMs": 7170,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "cf63f2c9e7f41af985afe635dd81e139c318e0aad529d86fd4ebd5924a5f3300",
+            "activationMs": 0.152833
+          },
+          {
+            "cycle": 90,
+            "rssKib": 38304,
+            "pssKib": null,
+            "cpuMs": 7750,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "fa636e2f899553b1cbb7a5917c6a520901dac7d0d44c37d847d2439c54fd32d1",
+            "activationMs": 0.422542
+          },
+          {
+            "cycle": 100,
+            "rssKib": 38352,
+            "pssKib": null,
+            "cpuMs": 8260,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "b275ebfc295138b1e5f4ed25396f42e3a1100706a41636db276bca98c4f61f64",
+            "activationMs": 0.354875
+          },
+          {
+            "cycle": 110,
+            "rssKib": 38768,
+            "pssKib": null,
+            "cpuMs": 8830,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "942b3f98d2322dcb0420f2affd014c5f5285e855937c470fd33413cf5a1d9cee",
+            "activationMs": 0.329958
+          },
+          {
+            "cycle": 120,
+            "rssKib": 38976,
+            "pssKib": null,
+            "cpuMs": 9400,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "6ee87ae6230b81cc70da5a6797e9d933c16c277a833931f1c58aa38ec8000c12",
+            "activationMs": 0.236125
+          },
+          {
+            "cycle": 130,
+            "rssKib": 39088,
+            "pssKib": null,
+            "cpuMs": 9990,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "a3f75ddb051c7d30781f01dcff3060090ca02c40e7158b96c25211970ca18a41",
+            "activationMs": 0.318916
+          },
+          {
+            "cycle": 140,
+            "rssKib": 39200,
+            "pssKib": null,
+            "cpuMs": 10490,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "4a31f2539fe502483ce7a16194a518e7121efc4e973526d10c0b3ffb35913579",
+            "activationMs": 0.27808299999999997
+          },
+          {
+            "cycle": 150,
+            "rssKib": 39504,
+            "pssKib": null,
+            "cpuMs": 11060,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "c8c1699867ee30f639b958c310f61d29a1daf85cf601d296ed66d5cce3c0c4cb",
+            "activationMs": 0.321542
+          },
+          {
+            "cycle": 160,
+            "rssKib": 39776,
+            "pssKib": null,
+            "cpuMs": 11550,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "a5f45f6f7dce26457465b25eec770b49dcca31d2aa9511a6e1e86928100905cc",
+            "activationMs": 0.412792
+          },
+          {
+            "cycle": 170,
+            "rssKib": 39952,
+            "pssKib": null,
+            "cpuMs": 12050,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "a232c755b654e7ca6ec1f2d9f72411795420ed8b5b9dc3ca14142c28878e08a0",
+            "activationMs": 0.255584
+          },
+          {
+            "cycle": 180,
+            "rssKib": 40304,
+            "pssKib": null,
+            "cpuMs": 12700,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "05415c6db646550f8a4a91c9a404971aa3ef852d56b02ad76d6689b04598c161",
+            "activationMs": 0.207208
+          },
+          {
+            "cycle": 190,
+            "rssKib": 40544,
+            "pssKib": null,
+            "cpuMs": 13190,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "7d3a42546d6f21a899388b9ec586f1e7c8f8e60239b7aba5edc378f8ad0b5cf7",
+            "activationMs": 0.250584
+          },
+          {
+            "cycle": 200,
+            "rssKib": 40832,
+            "pssKib": null,
+            "cpuMs": 13830,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "1e064c9c37da319efe65f45a1b959ec4de15eae1b77d67dcdcb18b9c89084512",
+            "activationMs": 0.460584
+          },
+          {
+            "cycle": 210,
+            "rssKib": 41008,
+            "pssKib": null,
+            "cpuMs": 14400,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "90610b5da69f09d71b71cb6ee6493c7067fbd2e195acf89fd35c7d0614d1c23f",
+            "activationMs": 0.190875
+          },
+          {
+            "cycle": 220,
+            "rssKib": 42416,
+            "pssKib": null,
+            "cpuMs": 15060,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "cf2fffccbe78cb2dc22cf313686890be0dd35cbc7e491f67cfe0058419e84bcf",
+            "activationMs": 0.466583
+          },
+          {
+            "cycle": 230,
+            "rssKib": 42464,
+            "pssKib": null,
+            "cpuMs": 15550,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "8fed465dd32566001241c670cc72cad874fa8f0b3ac0bd84337f2fe1144344c8",
+            "activationMs": 0.224834
+          },
+          {
+            "cycle": 240,
+            "rssKib": 42528,
+            "pssKib": null,
+            "cpuMs": 16120.000000000002,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "9b27b5f302c9006c86148f30138da5503906965499d35623c1d59d8be8579180",
+            "activationMs": 0.2765
+          },
+          {
+            "cycle": 250,
+            "rssKib": 42960,
+            "pssKib": null,
+            "cpuMs": 16700,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "7704b3430f0ead78d5d4cde7900b9d8f8be4b4a13aea8d8d3666a00f3d31edee",
+            "activationMs": 0.255417
+          }
+        ],
+        "retainedResourceSlope": {
+          "rssKibPerCycle": 34.21538461538461,
+          "pssKibPerCycle": null,
+          "threadsPerCycle": 0,
+          "fdsPerCycle": 0
+        },
+        "artifactNamespace": "../../../../var/folders/8v/09vl257j2_v70v2k77gh01n00000gn/T/perch-compile-benchmark-M834ga/compiled/compile-small"
+      }
+    }
+  ],
+  "medians": {
+    "cold_start_and_activation": {
+      "wallMs": 5468.479583,
+      "cpuMs": 2060,
+      "peakTreeRssKib": 295776,
+      "compilerPeakRssBytes": 227442688
+    },
+    "warm_no_op": {
+      "wallMs": 207.16625000000022,
+      "cpuMs": 10,
+      "peakTreeRssKib": 40384,
+      "compilerPeakRssBytes": null
+    },
+    "one_module_change": {
+      "wallMs": 6206.769625,
+      "cpuMs": 680,
+      "peakTreeRssKib": 318416,
+      "compilerPeakRssBytes": 225591296
+    },
+    "dependency_change": {
+      "wallMs": 11758.518375000001,
+      "cpuMs": 850,
+      "peakTreeRssKib": 329520,
+      "compilerPeakRssBytes": 280330240
+    },
+    "static_only_change": {
+      "wallMs": 331.5342920000003,
+      "cpuMs": 30,
+      "peakTreeRssKib": 35840,
+      "compilerPeakRssBytes": null
+    },
+    "rollback": {
+      "wallMs": 191.94395900000018,
+      "cpuMs": 10,
+      "peakTreeRssKib": 34496,
+      "compilerPeakRssBytes": null
+    }
+  }
+}

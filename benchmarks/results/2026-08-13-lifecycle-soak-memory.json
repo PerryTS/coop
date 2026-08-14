@@ -1,0 +1,358 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-13T19:26:31.765Z",
+  "platform": "arm64-darwin",
+  "loadAverage": [
+    10.5966796875,
+    11.416015625,
+    19.578125
+  ],
+  "trials": [
+    {
+      "trial": 1,
+      "loadAverage": 10.5966796875,
+      "scenarios": [
+        {
+          "name": "cold_start_and_activation",
+          "wallMs": 5415.689708,
+          "cpuMs": 1860,
+          "peakTreeRssKib": 308656,
+          "finalTreeRssKib": 39312,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1031.243875,
+            "snapshot": 3.852917,
+            "compiler": 1542.7475,
+            "validation": 51.775917,
+            "package": 28.513209,
+            "publication": 4.778917
+          },
+          "compilerPeakRssBytes": 240812032,
+          "codegenCache": {
+            "hits": 0,
+            "misses": 3
+          },
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": true
+        },
+        {
+          "name": "warm_no_op",
+          "wallMs": 174.546292,
+          "cpuMs": 10,
+          "peakTreeRssKib": 40112,
+          "finalTreeRssKib": 40112,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1.4935
+          },
+          "compilerPeakRssBytes": null,
+          "codegenCache": null,
+          "packageCacheHit": true,
+          "compiledCodeReuse": false,
+          "compilerSpawned": false
+        },
+        {
+          "name": "one_module_change",
+          "wallMs": 8081.317540999999,
+          "cpuMs": 550,
+          "peakTreeRssKib": 297280,
+          "finalTreeRssKib": 42208,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 0.84675,
+            "snapshot": 3.154292,
+            "compiler": 3291.791916,
+            "validation": 53.52291700000001,
+            "package": 46.171375,
+            "publication": 5.7423329999999995
+          },
+          "compilerPeakRssBytes": 284246016,
+          "codegenCache": {
+            "hits": 1,
+            "misses": 2
+          },
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": true
+        },
+        {
+          "name": "dependency_change",
+          "wallMs": 18619.143791000002,
+          "cpuMs": 750,
+          "peakTreeRssKib": 313664,
+          "finalTreeRssKib": 34464,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1.138458,
+            "snapshot": 3.26825,
+            "compiler": 7746.279,
+            "validation": 57.456916,
+            "package": 27.776041000000003,
+            "publication": 5.676875
+          },
+          "compilerPeakRssBytes": 254017536,
+          "codegenCache": {
+            "hits": 0,
+            "misses": 3
+          },
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": true
+        },
+        {
+          "name": "static_only_change",
+          "wallMs": 272.40483299999687,
+          "cpuMs": 30,
+          "peakTreeRssKib": 35232,
+          "finalTreeRssKib": 34512,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1.1460839999999999,
+            "snapshot": 4.110167,
+            "compiler": 1.721625,
+            "validation": 49.513959,
+            "package": 26.370917000000002,
+            "publication": 5.057375
+          },
+          "compilerPeakRssBytes": null,
+          "codegenCache": null,
+          "packageCacheHit": false,
+          "compiledCodeReuse": true,
+          "compilerSpawned": false
+        },
+        {
+          "name": "rollback",
+          "wallMs": 155.60333300000275,
+          "cpuMs": 10,
+          "peakTreeRssKib": 34528,
+          "finalTreeRssKib": 34528,
+          "finalTreePssKib": null,
+          "phasesMs": {},
+          "compilerPeakRssBytes": null,
+          "codegenCache": null,
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": false
+        }
+      ],
+      "replacementSoak": {
+        "cycles": 100,
+        "wallMs": 18406.828999999998,
+        "trafficRequests": 7939,
+        "trafficErrors": 0,
+        "compilerSpawned": false,
+        "runtimeReuses": 100,
+        "baseline": {
+          "cycle": 0,
+          "rssKib": 34528,
+          "pssKib": null,
+          "cpuMs": 1810,
+          "threads": 13,
+          "fds": 13,
+          "arenaLiveBytes": 2640,
+          "arenaReservedBytes": 262144
+        },
+        "final": {
+          "cycle": 100,
+          "rssKib": 37808,
+          "pssKib": null,
+          "cpuMs": 7530,
+          "threads": 13,
+          "fds": 14,
+          "arenaLiveBytes": 2242048,
+          "arenaReservedBytes": 2490368
+        },
+        "checkpoints": [
+          {
+            "cycle": 0,
+            "rssKib": 34528,
+            "pssKib": null,
+            "cpuMs": 1810,
+            "threads": 13,
+            "fds": 13,
+            "arenaLiveBytes": 2640,
+            "arenaReservedBytes": 262144
+          },
+          {
+            "cycle": 10,
+            "rssKib": 35008,
+            "pssKib": null,
+            "cpuMs": 2350,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "2a01f0dfd98a6dac5d008e5eb941bf75533e1f9ba64cc8ecd86c8b8c555f919f",
+            "activationMs": 0.387375,
+            "arenaLiveBytes": 183904,
+            "arenaReservedBytes": 393216
+          },
+          {
+            "cycle": 20,
+            "rssKib": 35472,
+            "pssKib": null,
+            "cpuMs": 2920,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "06271b5a97fe014554a071e6a5e919f143b4c99294f0f0ee3424611667b4a8f6",
+            "activationMs": 0.46349999999999997,
+            "arenaLiveBytes": 405696,
+            "arenaReservedBytes": 524288
+          },
+          {
+            "cycle": 30,
+            "rssKib": 36064,
+            "pssKib": null,
+            "cpuMs": 3640,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "33abb2c518e5e62dbb13e7bd2516c3e5a43e771c4d38d58a858ed55570c8e92b",
+            "activationMs": 0.18925,
+            "arenaLiveBytes": 778176,
+            "arenaReservedBytes": 917504
+          },
+          {
+            "cycle": 40,
+            "rssKib": 36304,
+            "pssKib": null,
+            "cpuMs": 4220,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "c772d8ad13a6e16bb391a554337a2965ca3a6ba0d4a235ff9a8fa763a34d8396",
+            "activationMs": 0.316625,
+            "arenaLiveBytes": 1010848,
+            "arenaReservedBytes": 1179648
+          },
+          {
+            "cycle": 50,
+            "rssKib": 36544,
+            "pssKib": null,
+            "cpuMs": 4720,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "6df81922f6a3785ad86a5d94d0e01a1c4880b56296ec02a1e153e2fbc616ef16",
+            "activationMs": 0.303083,
+            "arenaLiveBytes": 1183408,
+            "arenaReservedBytes": 1310720
+          },
+          {
+            "cycle": 60,
+            "rssKib": 36976,
+            "pssKib": null,
+            "cpuMs": 5250,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "e740b67c7e46e4248c3c8c4ac6cef8412677c61695495328bd082f449eae2c77",
+            "activationMs": 0.3025,
+            "arenaLiveBytes": 1338832,
+            "arenaReservedBytes": 1441792
+          },
+          {
+            "cycle": 70,
+            "rssKib": 37248,
+            "pssKib": null,
+            "cpuMs": 5910,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "11ed3d6c06cadfda3ff70346b29f02e9aa5efd628b9af395745c45002c435f21",
+            "activationMs": 0.331667,
+            "arenaLiveBytes": 1659904,
+            "arenaReservedBytes": 1835008
+          },
+          {
+            "cycle": 80,
+            "rssKib": 37440,
+            "pssKib": null,
+            "cpuMs": 6490,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "9d78fd71c3e29e567401f17df07c052a9e5a17d1c9ccd17f0728e6e0b4609a92",
+            "activationMs": 0.349208,
+            "arenaLiveBytes": 1886320,
+            "arenaReservedBytes": 1966080
+          },
+          {
+            "cycle": 90,
+            "rssKib": 37504,
+            "pssKib": null,
+            "cpuMs": 7010,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "ba628819a4193b9ce3f2fe2c99ecb386fd0a67de831ef4d28671751d393796bf",
+            "activationMs": 0.375,
+            "arenaLiveBytes": 2065408,
+            "arenaReservedBytes": 2097152
+          },
+          {
+            "cycle": 100,
+            "rssKib": 37792,
+            "pssKib": null,
+            "cpuMs": 7520,
+            "threads": 13,
+            "fds": 14,
+            "packages": 3,
+            "activePackage": "3ecaecbef61e9c74101d8e1e7668f3b9270c8768d9980b170a917f876695b6dc",
+            "activationMs": 0.417833,
+            "arenaLiveBytes": 2241776,
+            "arenaReservedBytes": 2490368
+          }
+        ],
+        "retainedResourceSlope": {
+          "rssKibPerCycle": 22.902857142857144,
+          "pssKibPerCycle": null,
+          "threadsPerCycle": 0,
+          "fdsPerCycle": 0,
+          "arenaLiveBytesPerCycle": 21994.24,
+          "arenaReservedBytesPerCycle": 22843.977142857144
+        },
+        "artifactNamespace": "../../../../var/folders/8v/09vl257j2_v70v2k77gh01n00000gn/T/perch-compile-benchmark-8FDhlZ/compiled/compile-small"
+      }
+    }
+  ],
+  "medians": {
+    "cold_start_and_activation": {
+      "wallMs": 5415.689708,
+      "cpuMs": 1860,
+      "peakTreeRssKib": 308656,
+      "compilerPeakRssBytes": 240812032
+    },
+    "warm_no_op": {
+      "wallMs": 174.546292,
+      "cpuMs": 10,
+      "peakTreeRssKib": 40112,
+      "compilerPeakRssBytes": null
+    },
+    "one_module_change": {
+      "wallMs": 8081.317540999999,
+      "cpuMs": 550,
+      "peakTreeRssKib": 297280,
+      "compilerPeakRssBytes": 284246016
+    },
+    "dependency_change": {
+      "wallMs": 18619.143791000002,
+      "cpuMs": 750,
+      "peakTreeRssKib": 313664,
+      "compilerPeakRssBytes": 254017536
+    },
+    "static_only_change": {
+      "wallMs": 272.40483299999687,
+      "cpuMs": 30,
+      "peakTreeRssKib": 35232,
+      "compilerPeakRssBytes": null
+    },
+    "rollback": {
+      "wallMs": 155.60333300000275,
+      "cpuMs": 10,
+      "peakTreeRssKib": 34528,
+      "compilerPeakRssBytes": null
+    }
+  }
+}

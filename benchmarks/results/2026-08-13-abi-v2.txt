@@ -1,0 +1,47 @@
+Perch application ABI v2 and direct-link optimization
+=====================================================
+
+Machine state
+-------------
+Apple M1 Max, macOS 26.5. The machine was severely contended during these
+runs. One-minute load was roughly 149-180, so wall times are directional.
+
+Artifact changes
+----------------
+- application HTTP ABI: required handle(Buffer): Buffer / Promise<Buffer>
+- public application exports: perry_module_init + handle (2 total)
+- no ABI-v1, manifestless, string, JSON, or Base64 application fallback
+- two-level dynamic dependencies on separate runtime and stdlib providers
+- dead stripping enabled at the final application link
+
+Tiny application:
+- before: 68,616 bytes
+- ABI v2: 51,880 bytes
+
+Next lower-bound application:
+- before: 4,437,648 bytes, 3 public exports
+- ABI v2: 4,366,928 bytes, 2 public exports
+- SHA-256: 11295e58657b1b4e674352644b539b20d300d8918d2f66718817e3bdc069c3b8
+
+macOS preload-concurrency control (20 tiny dylibs, one trial each)
+----------------------------------------------------------------
+concurrency=1:
+RESULT apps=20 startup_median_ms=6836.827 ready_rss_median_mib=25.500 warm_all_median_ms=22.190 warm_rss_median_mib=40.875
+
+concurrency=4:
+RESULT apps=20 startup_median_ms=7333.081 ready_rss_median_mib=25.484 warm_all_median_ms=40.825 warm_rss_median_mib=41.438
+
+Strict ABI-v2 100-app control (one trial)
+-----------------------------------------
+RESULT apps=100 startup_median_ms=28030.172 ready_rss_median_mib=58.906 warm_all_median_ms=156.687 warm_rss_median_mib=131.281
+
+Earlier 100-app baseline:
+RESULT apps=100 startup_median_ms=30300 ready_rss_median_mib=120.2 warm_rss_median_mib=375.5
+
+Next lower-bound HTTP run (three-trial median)
+------------------------------------------------
+RESULT name="perch-next-abi-v2" trials=3 load1_start_median=179.87 load1_end_median=181.44 startup_median_ms=900.141 ready_rss_median_mib=36.688 first_request_median_ms=2.064 usable_cold_start_median_ms=902.206 warm_rss_median_mib=39.672 requests=2000 concurrency=20 workload_median_ms=4634.850 requests_per_second=431.513 server_cpu_us_per_request=315.000 post_rss_median_mib=92.172
+
+The previous optimized Next run had a 366 ms usable start and 300 us/request,
+but its load was 79-81 rather than about 180. The new wall/throughput result is
+therefore not an ABI regression measurement. RSS stayed essentially flat.

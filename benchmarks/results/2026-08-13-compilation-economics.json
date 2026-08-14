@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-13T19:00:25.404Z",
+  "platform": "arm64-darwin",
+  "loadAverage": [
+    44.919921875,
+    42.767578125,
+    45.8876953125
+  ],
+  "trials": [
+    {
+      "trial": 1,
+      "loadAverage": 44.919921875,
+      "scenarios": [
+        {
+          "name": "cold_start_and_activation",
+          "wallMs": 6508.79825,
+          "cpuMs": 1560,
+          "peakTreeRssKib": 308800,
+          "finalTreeRssKib": 39472,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1752.868,
+            "snapshot": 3.146792,
+            "compiler": 1646.310709,
+            "validation": 66.733666,
+            "package": 41.980834,
+            "publication": 5.4861249999999995
+          },
+          "compilerPeakRssBytes": 262733824,
+          "codegenCache": {
+            "hits": 0,
+            "misses": 3
+          },
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": true
+        },
+        {
+          "name": "warm_no_op",
+          "wallMs": 170.75520899999992,
+          "cpuMs": 10,
+          "peakTreeRssKib": 40240,
+          "finalTreeRssKib": 40240,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1.4042080000000001
+          },
+          "compilerPeakRssBytes": null,
+          "codegenCache": null,
+          "packageCacheHit": true,
+          "compiledCodeReuse": false,
+          "compilerSpawned": false
+        },
+        {
+          "name": "one_module_change",
+          "wallMs": 5699.9665,
+          "cpuMs": 550,
+          "peakTreeRssKib": 316736,
+          "finalTreeRssKib": 41296,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 0.845958,
+            "snapshot": 3.106042,
+            "compiler": 2663.950834,
+            "validation": 71.937292,
+            "package": 29.055709,
+            "publication": 4.924333000000001
+          },
+          "compilerPeakRssBytes": 247562240,
+          "codegenCache": {
+            "hits": 1,
+            "misses": 2
+          },
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": true
+        },
+        {
+          "name": "dependency_change",
+          "wallMs": 7195.295125000001,
+          "cpuMs": 520,
+          "peakTreeRssKib": 298256,
+          "finalTreeRssKib": 41792,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 1.163458,
+            "snapshot": 3.307125,
+            "compiler": 3687.551167,
+            "validation": 59.440042,
+            "package": 32.71625,
+            "publication": 4.9218329999999995
+          },
+          "compilerPeakRssBytes": 277676032,
+          "codegenCache": {
+            "hits": 0,
+            "misses": 3
+          },
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": true
+        },
+        {
+          "name": "static_only_change",
+          "wallMs": 394.68987500000003,
+          "cpuMs": 30,
+          "peakTreeRssKib": 42832,
+          "finalTreeRssKib": 42096,
+          "finalTreePssKib": null,
+          "phasesMs": {
+            "identity": 3.029375,
+            "snapshot": 10.064709,
+            "compiler": 2.210666,
+            "validation": 72.82454200000001,
+            "package": 81.14183299999999,
+            "publication": 6.214792
+          },
+          "compilerPeakRssBytes": null,
+          "codegenCache": null,
+          "packageCacheHit": false,
+          "compiledCodeReuse": true,
+          "compilerSpawned": false
+        },
+        {
+          "name": "rollback",
+          "wallMs": 202.4588330000006,
+          "cpuMs": 20,
+          "peakTreeRssKib": 42096,
+          "finalTreeRssKib": 33936,
+          "finalTreePssKib": null,
+          "phasesMs": {},
+          "compilerPeakRssBytes": null,
+          "codegenCache": null,
+          "packageCacheHit": false,
+          "compiledCodeReuse": false,
+          "compilerSpawned": false
+        }
+      ]
+    }
+  ],
+  "medians": {
+    "cold_start_and_activation": {
+      "wallMs": 6508.79825,
+      "cpuMs": 1560,
+      "peakTreeRssKib": 308800,
+      "compilerPeakRssBytes": 262733824
+    },
+    "warm_no_op": {
+      "wallMs": 170.75520899999992,
+      "cpuMs": 10,
+      "peakTreeRssKib": 40240,
+      "compilerPeakRssBytes": null
+    },
+    "one_module_change": {
+      "wallMs": 5699.9665,
+      "cpuMs": 550,
+      "peakTreeRssKib": 316736,
+      "compilerPeakRssBytes": 247562240
+    },
+    "dependency_change": {
+      "wallMs": 7195.295125000001,
+      "cpuMs": 520,
+      "peakTreeRssKib": 298256,
+      "compilerPeakRssBytes": 277676032
+    },
+    "static_only_change": {
+      "wallMs": 394.68987500000003,
+      "cpuMs": 30,
+      "peakTreeRssKib": 42832,
+      "compilerPeakRssBytes": null
+    },
+    "rollback": {
+      "wallMs": 202.4588330000006,
+      "cpuMs": 20,
+      "peakTreeRssKib": 42096,
+      "compilerPeakRssBytes": null
+    }
+  }
+}

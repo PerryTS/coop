@@ -1,0 +1,23 @@
+ celld 0.2.0
+───────────────────────────────────────────────
+Total Upload: 0.56 KiB / gzip: 0.32 KiB
+Your Worker has no bindings.
+Bundled perch-celld-benchmark (0.01 sec)
+2026-08-14T01:45:08.892401Z  INFO object_store::aws::builder: Using Static credential provider
+2026-08-14T01:45:08.908954Z  INFO object_store::aws::builder: Using Static credential provider
+Uploaded perch-celld-benchmark (0.02 sec)
+  s3://perch-celld-benchmark/deploy/perch-celld-benchmark/49f838f8b9ec28bf
+Current Version ID: 49f838f8b9ec28bf
+Nodes load a deployment at startup; restart them to serve this version.
+celld_commit=3f22aedd1ea4d413b93e84afb1ce385f04be84f1
+celld_version=celld 0.2.0
+celld_binary_sha256=80625ced32fc9fe5d1818f5f9b7ab055236e7563fdad635ca9f0ce7faab12b63
+esbuild_version=0.28.0
+minio_image=minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+mc_image=minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+node_version=v18.19.1
+kernel=Linux 6.8.0-117-generic #117-Ubuntu SMP PREEMPT_DYNAMIC Thu May  7 17:26:37 UTC 2026 aarch64 GNU/Linux
+object_store_accounting=external-development-dependency
+sample name="celld-worker" trial=1 load1_start=0.96 load1_end=1.04 startup_ms=35.232 startup_cpu_ms=40.000 ready_rss_mib=31.547 ready_pss_mib=30.154 ready_private_dirty_mib=10.699 ready_cgroup_mib=11.566 first_request_ms=45.568 usable_cold_start_ms=80.799 first_request_cpu_ms=10.000 warm_rss_mib=32.926 warm_pss_mib=31.533 warm_private_dirty_mib=10.953 warm_cgroup_mib=11.844 requests=2000 workload_ms=1925.185 requests_per_second=1038.861 latency_p50_ms=30.112 latency_p99_ms=273.827 server_cpu_us_per_request=780.000 post_rss_mib=87.227 post_pss_mib=85.834 post_private_dirty_mib=56.191 post_cgroup_mib=57.938 cgroup_peak_mib=58.648
+sample name="celld-worker" trial=2 load1_start=1.04 load1_end=1.12 startup_ms=31.731 startup_cpu_ms=40.000 ready_rss_mib=31.453 ready_pss_mib=30.074 ready_private_dirty_mib=10.684 ready_cgroup_mib=11.539 first_request_ms=16.718 usable_cold_start_ms=48.449 first_request_cpu_ms=10.000 warm_rss_mib=32.836 warm_pss_mib=31.457 warm_private_dirty_mib=10.941 warm_cgroup_mib=11.832 requests=2000 workload_ms=1548.816 requests_per_second=1291.309 latency_p50_ms=21.005 latency_p99_ms=176.054 server_cpu_us_per_request=430.000 post_rss_mib=85.547 post_pss_mib=84.168 post_private_dirty_mib=54.527 post_cgroup_mib=56.477 cgroup_peak_mib=57.250
+RESULT name="celld-worker" trials=2 load1_start_median=1.04 load1_end_median=1.12 startup_median_ms=35.232 startup_cpu_median_ms=40.000 ready_rss_median_mib=31.547 ready_pss_median_mib=30.154 ready_private_dirty_median_mib=10.699 ready_cgroup_median_mib=11.566 first_request_median_ms=45.568 usable_cold_start_median_ms=80.799 first_request_cpu_median_ms=10.000 warm_rss_median_mib=32.926 warm_pss_median_mib=31.533 warm_private_dirty_median_mib=10.953 warm_cgroup_median_mib=11.844 requests=2000 concurrency=50 workload_median_ms=1925.185 requests_per_second=1038.861 latency_p50_median_ms=30.112 latency_p99_median_ms=273.827 server_cpu_us_per_request=780.000 post_rss_median_mib=87.227 post_pss_median_mib=85.834 post_private_dirty_median_mib=56.191 post_cgroup_median_mib=57.938 cgroup_peak_median_mib=58.648
