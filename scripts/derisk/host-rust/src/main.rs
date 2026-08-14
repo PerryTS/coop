@@ -10,9 +10,7 @@
 //
 // Pass criterion: this prints "hello from perry plugin" to stdout.
 
-use perry_runtime::{
-    js_string_from_bytes, JSValue, StringHeader,
-};
+use perry_runtime::{js_string_from_bytes, JSValue, StringHeader};
 use std::env;
 use std::process::ExitCode;
 
@@ -30,16 +28,32 @@ extern "C" {
     // linker dead-strips unreferenced perry-runtime symbols, so we must
     // explicitly reference them here. force_link() below holds the pointers
     // through std::hint::black_box so the optimizer can't elide them.
-    fn js_closure_alloc(func_ptr: *const u8, captures_ptr: *const u8, captures_count: u32) -> *mut u8;
+    fn js_closure_alloc(
+        func_ptr: *const u8,
+        captures_ptr: *const u8,
+        captures_count: u32,
+    ) -> *mut u8;
     fn js_nanbox_get_pointer(value: f64) -> *mut u8;
     fn js_nanbox_pointer(ptr: *mut u8) -> f64;
     fn js_nanbox_string(ptr: *mut u8) -> f64;
-    fn js_native_call_method(receiver: f64, name: *const u8, name_len: usize, args: *const f64, argc: usize) -> f64;
+    fn js_native_call_method(
+        receiver: f64,
+        name: *const u8,
+        name_len: usize,
+        args: *const f64,
+        argc: usize,
+    ) -> f64;
     fn perry_plugin_register_tool(api_handle: i64, name: f64, desc: f64, handler: f64) -> f64;
-    fn perry_plugin_set_metadata(api_handle: i64, name: f64, version: f64, description: f64) -> f64;
+    fn perry_plugin_set_metadata(api_handle: i64, name: f64, version: f64, description: f64)
+        -> f64;
     fn perry_plugin_register_hook(api_handle: i64, hook_name: f64, handler: f64) -> f64;
     fn perry_plugin_register_route(api_handle: i64, path: f64, handler: f64) -> f64;
-    fn perry_plugin_register_service(api_handle: i64, name: f64, start_fn: f64, stop_fn: f64) -> f64;
+    fn perry_plugin_register_service(
+        api_handle: i64,
+        name: f64,
+        start_fn: f64,
+        stop_fn: f64,
+    ) -> f64;
 }
 
 /// Force the linker to keep the perry-runtime symbols that Perry plugins
@@ -104,7 +118,10 @@ fn main() -> ExitCode {
     let plugin_id = unsafe { perry_plugin_load(path_val) };
 
     if plugin_id <= 0 {
-        eprintln!("FAIL: perry_plugin_load returned {} (expected > 0)", plugin_id);
+        eprintln!(
+            "FAIL: perry_plugin_load returned {} (expected > 0)",
+            plugin_id
+        );
         return ExitCode::from(1);
     }
     println!("==> plugin loaded with id={}", plugin_id);
@@ -117,7 +134,10 @@ fn main() -> ExitCode {
     let s = match read_perry_string(result) {
         Some(s) => s,
         None => {
-            eprintln!("FAIL: tool result was not a string (raw bits: 0x{:016x})", result.to_bits());
+            eprintln!(
+                "FAIL: tool result was not a string (raw bits: 0x{:016x})",
+                result.to_bits()
+            );
             unsafe { perry_plugin_unload(plugin_id) };
             return ExitCode::from(1);
         }

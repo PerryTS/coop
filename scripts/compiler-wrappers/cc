@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+set -eu
+
+real_cc=${PERCH_REAL_CC:-/usr/bin/cc}
+exports_file=${PERCH_APP_EXPORTS_FILE:-}
+aliases_file=${PERCH_APP_ALIASES_FILE:-}
+runtime_library=${PERCH_PERRY_RUNTIME_LIBRARY:-}
+stdlib_library=${PERCH_PERRY_STDLIB_LIBRARY:-}
+is_shared=0
+
+for argument in "$@"; do
+    case "$argument" in
+        -dynamiclib|-shared) is_shared=1 ;;
+    esac
+done
+
+if [ "$is_shared" -eq 1 ] && [ -n "$exports_file" ]; then
+    platform=$(uname -s)
+    alias_args=()
+    if [ -n "$aliases_file" ]; then
+        if [ ! -f "$aliases_file" ]; then
+            echo "Perch app alias specification does not exist: $aliases_file" >&2
+            exit 1
+        fi
+
+        # Perry's internal wrapper names are derived from its recomputed
+        # project root. A dependency symlink can therefore put an absolute
+        # staging path in those names. Resolve each generated entry by its
+        # unique function suffix and publish a stable Perch-owned alias.
+        link_symbols=()
+        for argument in "$@"; do
+            case "$argument" in
+                *.o)
+                    if [ -f "$argument" ]; then
+                        while IFS= read -r symbol; do
+                            [ -n "$symbol" ] && link_symbols+=("$symbol")
+                        done < <(nm -g "$argument" 2>/dev/null | awk '
+                            NF >= 2 {
+                                kind = $(NF - 1)
+                                if (kind != "U" && kind != "u") print $NF
+                            }
+                        ')
+                    fi
+                    ;;
+            esac
+        done
+
+        while IFS=$'\t' read -r stable suffix; do
+            [ -z "$stable" ] && continue
+            case "$stable:$suffix" in
+                *[!A-Za-z0-9_:]*)
+                    echo "invalid Perch app alias specification: $stable -> $suffix" >&2
+                    exit 1
+                    ;;
+            esac
+            candidate=""
+            matches=0
+            for symbol in "${link_symbols[@]}"; do
+                case "$platform:$symbol" in
+                    Darwin:___perry_wrap_perry_fn_*"$suffix"|Linux:__perry_wrap_perry_fn_*"$suffix")
+                        candidate="$symbol"
+                        matches=$((matches + 1))
+                        ;;
+                esac
+            done
+            if [ "$matches" -ne 1 ]; then
+                echo "Perch expected exactly one Perry wrapper ending in $suffix, found $matches" >&2
+                exit 1
+            fi
+            case "$platform" in
+                Darwin) alias_args+=("-Wl,-alias,$candidate,_$stable") ;;
+                Linux) alias_args+=("-Wl,--defsym,$stable=$candidate") ;;
+            esac
+        done < "$aliases_file"
+    fi
+
+    case "$platform" in
+        Darwin)
+            if [ -z "$runtime_library" ] || [ -z "$stdlib_library" ]; then
+                echo "Perch app link requires both Perry provider paths" >&2
+                exit 1
+            fi
+
+            # Perry's generic dylib link uses flat-namespace dynamic lookup.
+            # That makes dyld search the providers' large Rust export surfaces
+            # for every app relocation. Bind directly to the two provider
+            # install names instead; their code remains in separate files.
+            filtered=()
+            pending_undefined=""
+            for argument in "$@"; do
+                if [ -n "$pending_undefined" ]; then
+                    if [ "$argument" != "dynamic_lookup" ]; then
+                        filtered+=("$pending_undefined" "$argument")
+                    fi
+                    pending_undefined=""
+                    continue
+                fi
+                case "$argument" in
+                    -flat_namespace|-Wl,-flat_namespace|-Wl,-undefined,dynamic_lookup)
+                        ;;
+                    -undefined|-Wl,-undefined)
+                        pending_undefined="$argument"
+                        ;;
+                    *) filtered+=("$argument") ;;
+                esac
+            done
+            if [ -n "$pending_undefined" ]; then
+                filtered+=("$pending_undefined")
+            fi
+            exec "$real_cc" "${filtered[@]}" \
+                "$runtime_library" "$stdlib_library" \
+                "${alias_args[@]}" \
+                "-Wl,-twolevel_namespace" \
+                "-Wl,-dead_strip" "-Wl,-S" "-Wl,-x" \
+                "-Wl,-exported_symbols_list,$exports_file"
+            ;;
+        Linux)
+            if [ -z "$runtime_library" ] || [ -z "$stdlib_library" ]; then
+                echo "Perch app link requires both Perry provider paths" >&2
+                exit 1
+            fi
+            # GNU ld enables --as-needed in the Rust/Perry link. Keep both
+            # providers as explicit DT_NEEDED entries even when a tiny app
+            # happens not to reference a stdlib symbol directly: the app ABI
+            # contract always consists of runtime + stdlib + app-only image.
+            exec "$real_cc" "$@" \
+                "-Wl,--no-as-needed" \
+                "$runtime_library" "$stdlib_library" \
+                "-Wl,--as-needed" \
+                "${alias_args[@]}" \
+                "-Wl,--no-undefined" "-Wl,--gc-sections" \
+                "-Wl,--strip-debug" "-Wl,--discard-all" \
+                "-Wl,--version-script=$exports_file"
+            ;;
+    esac
+fi
+
+exec "$real_cc" "$@"
