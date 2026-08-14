@@ -15,8 +15,8 @@
 //! DeploymentHost path is tested by plugin_roundtrip.rs.
 
 use perch_host_abi::{
-    ClientHello, DeploymentRequest, DeploymentResponse, WorkerRequest, WorkerResponse,
-    ABI_VERSION, MAX_FRAME_SIZE,
+    ClientHello, DeploymentRequest, DeploymentResponse, WorkerRequest, WorkerResponse, ABI_VERSION,
+    MAX_FRAME_SIZE,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -161,6 +161,7 @@ async fn hello_then_dispatch_roundtrip() {
 
     let dispatch = WorkerRequest::Dispatch {
         request_id: 42,
+        runtime_id: None,
         request: DeploymentRequest {
             method: "GET".to_string(),
             path: "/".to_string(),
