@@ -104,8 +104,7 @@ pub async fn provision_and_migrate(
 /// Read a migration file's SQL content.
 #[allow(dead_code)]
 fn read_migration(path: &Path) -> Result<String> {
-    std::fs::read_to_string(path)
-        .with_context(|| format!("reading migration {:?}", path))
+    std::fs::read_to_string(path).with_context(|| format!("reading migration {:?}", path))
 }
 
 #[cfg(test)]

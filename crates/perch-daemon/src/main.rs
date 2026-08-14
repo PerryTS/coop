@@ -21,7 +21,9 @@
 //! listener + worker spawn flow is validated.
 
 mod admin;
+mod artifacts;
 mod cdn;
+mod cgroup;
 mod config;
 mod deployments;
 mod listener;
@@ -37,7 +39,12 @@ mod worker_client;
 use crate::config::RuntimeConfig;
 use crate::deployments::DeploymentSupervisor;
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, Subcommand};
+use perch_app_host::{
+    initialize_runtime_libraries_with_verification,
+    queue_store::{initialize_queue_gateway, QueueStore},
+    ProviderVerification,
+};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{error, info};
@@ -46,8 +53,43 @@ use tracing::{error, info};
 #[command(name = "perch", about = "Perch supervisor daemon")]
 struct Cli {
     /// Path to runtime.toml. Defaults to ./var/perch/runtime.toml.
-    #[arg(long, env = "PERCH_CONFIG")]
+    #[arg(long, env = "PERCH_CONFIG", global = true)]
     config: Option<PathBuf>,
+    /// Prepared cgroup-v2 membership file used by controlled benchmarks or an
+    /// external launcher. Production service managers may attach the daemon
+    /// themselves. Attachment happens before provider loading.
+    #[arg(long, env = "PERCH_SELF_CGROUP_PROCS", global = true, hide = true)]
+    self_cgroup_procs: Option<PathBuf>,
+    #[command(subcommand)]
+    command: Option<CliCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+enum CliCommand {
+    /// Compile and verify immutable packages without activating them.
+    Build {
+        /// Deployment names. Omit only when --all is used.
+        deployments: Vec<String>,
+        /// Build every deployment directory in lexical order.
+        #[arg(long, conflicts_with = "deployments")]
+        all: bool,
+    },
+    /// Internal parent-bound wrapper for Perry compiler processes. The
+    /// supervisor launches this in a private process group so a daemon crash
+    /// cannot leave the compiler or any of its descendants running.
+    #[cfg(unix)]
+    #[command(hide = true, name = "compiler-guard")]
+    CompilerGuard {
+        #[arg(long)]
+        parent_pid: u32,
+        #[arg(
+            required = true,
+            num_args = 1..,
+            trailing_var_arg = true,
+            allow_hyphen_values = true
+        )]
+        command: Vec<std::ffi::OsString>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -60,12 +102,28 @@ fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
+    #[cfg(unix)]
+    if let Some(CliCommand::CompilerGuard {
+        parent_pid,
+        command,
+    }) = &cli.command
+    {
+        return run_compiler_guard(*parent_pid, command);
+    }
+    if let Some(cgroup_procs) = cli.self_cgroup_procs.as_deref() {
+        attach_self_to_cgroup(cgroup_procs)?;
+    }
     let config_path = cli
         .config
         .unwrap_or_else(|| PathBuf::from("var/perch/runtime.toml"));
 
     info!(config = %config_path.display(), "perch starting");
     let runtime_cfg = Arc::new(RuntimeConfig::load(&config_path)?);
+    initialize_runtime_libraries_with_verification(
+        &runtime_cfg.paths.perry_runtime_library,
+        &runtime_cfg.paths.perry_stdlib_library,
+        ProviderVerification::parse(runtime_cfg.execution.provider_verification.as_str())?,
+    )?;
 
     // Validate and log TLS configuration.
     tls::validate_tls_config(&runtime_cfg)?;
@@ -83,7 +141,52 @@ fn main() -> Result<()> {
         .build()?;
 
     runtime.block_on(async move {
-        let supervisor = Arc::new(DeploymentSupervisor::new(runtime_cfg.clone()));
+        // Explicit prebuild never needs the database. Serving mode proves the
+        // durable queue schema before any queue-backed deployment is loaded.
+        let queue_store = if cli.command.is_none() {
+            match &runtime_cfg.postgres {
+                Some(postgres) => Some(Arc::new(
+                    QueueStore::connect(&postgres.url, postgres.max_connections)
+                        .await
+                        .context("initializing durable queue service")?,
+                )),
+                None => None,
+            }
+        } else {
+            None
+        };
+        if let Some(store) = &queue_store {
+            initialize_queue_gateway(store.clone(), tokio::runtime::Handle::current())
+                .context("installing application queue enqueue gateway")?;
+        }
+        let supervisor = Arc::new(DeploymentSupervisor::with_queue_store(
+            runtime_cfg.clone(),
+            queue_store,
+        ));
+
+        if let Some(CliCommand::Build { deployments, all }) = cli.command {
+            let names = if all {
+                deployment_names(&runtime_cfg.paths.deployments_dir)?
+            } else {
+                if deployments.is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "perch build requires at least one deployment or --all"
+                    ));
+                }
+                deployments
+            };
+            for name in names {
+                let started = std::time::Instant::now();
+                let library = supervisor.prebuild_deployment(&name).await?;
+                info!(
+                    deployment = name,
+                    library = %library.display(),
+                    elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
+                    "immutable application package prebuilt"
+                );
+            }
+            return Ok::<(), anyhow::Error>(());
+        }
 
         if let Err(e) = supervisor.initial_scan().await {
             error!(error = ?e, "initial deployment scan failed");
@@ -96,11 +199,18 @@ fn main() -> Result<()> {
         // handle lives for the life of the daemon; we don't wait on it
         // explicitly — it'll get cancelled when the tokio runtime
         // shuts down.
-        match watcher::start(runtime_cfg.paths.deployments_dir.clone(), supervisor.clone()) {
-            Ok(_handle) => {}
-            Err(e) => {
-                error!(error = ?e, "failed to start deployment watcher");
+        if runtime_cfg.execution.watch_deployments {
+            match watcher::start(
+                runtime_cfg.paths.deployments_dir.clone(),
+                supervisor.clone(),
+            ) {
+                Ok(_handle) => {}
+                Err(e) => {
+                    error!(error = ?e, "failed to start deployment watcher");
+                }
             }
+        } else {
+            info!("deployment watcher disabled; reloads require explicit orchestration");
         }
 
         // Start the RSS watchdog: periodically check each worker's
@@ -122,6 +232,93 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Keep the compiler in a private process group and watch the exact daemon
+/// parent. `kill_on_drop` covers ordinary cancellation, while this wrapper
+/// covers uncatchable daemon termination where Rust destructors never run.
+#[cfg(unix)]
+fn run_compiler_guard(parent_pid: u32, command: &[std::ffi::OsString]) -> Result<()> {
+    use std::os::unix::process::ExitStatusExt;
+
+    if parent_pid == 0 || parent_pid > libc::pid_t::MAX as u32 {
+        anyhow::bail!("compiler guard parent PID must fit a positive pid_t");
+    }
+    let actual_parent = unsafe { libc::getppid() };
+    if actual_parent != parent_pid as libc::pid_t {
+        anyhow::bail!(
+            "compiler guard parent changed before initialization: expected {parent_pid}, current {actual_parent}"
+        );
+    }
+    let Some(program) = command.first() else {
+        anyhow::bail!("compiler guard requires a command");
+    };
+
+    // The outer Tokio command also requests a fresh process group. Repeating
+    // the operation here makes the invariant hold when the hidden command is
+    // exercised directly by its OS-process regression test.
+    if unsafe { libc::setpgid(0, 0) } != 0 {
+        return Err(std::io::Error::last_os_error())
+            .context("creating compiler guard process group");
+    }
+
+    let mut child = std::process::Command::new(program)
+        .args(&command[1..])
+        .spawn()
+        .with_context(|| format!("compiler guard spawning {program:?}"))?;
+
+    loop {
+        if unsafe { libc::getppid() } != parent_pid as libc::pid_t {
+            // The guard and every compiler descendant inherit this private
+            // process group. Killing group zero cannot target the daemon or
+            // the test runner because the guard is its group leader.
+            unsafe {
+                libc::kill(0, libc::SIGKILL);
+            }
+            std::process::exit(125);
+        }
+        if let Some(status) = child.try_wait().context("waiting for guarded compiler")? {
+            if status.success() {
+                return Ok(());
+            }
+            std::process::exit(
+                status
+                    .code()
+                    .unwrap_or_else(|| 128 + status.signal().unwrap_or(1)),
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+fn attach_self_to_cgroup(cgroup_procs: &std::path::Path) -> Result<()> {
+    if cgroup_procs.file_name().and_then(|name| name.to_str()) != Some("cgroup.procs") {
+        anyhow::bail!("daemon cgroup membership path must name cgroup.procs");
+    }
+    std::fs::write(cgroup_procs, std::process::id().to_string()).with_context(|| {
+        format!(
+            "attaching daemon {} to cgroup through {}",
+            std::process::id(),
+            cgroup_procs.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn deployment_names(directory: &std::path::Path) -> Result<Vec<String>> {
+    let mut names = std::fs::read_dir(directory)
+        .with_context(|| format!("reading deployments directory {}", directory.display()))?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            entry
+                .file_type()
+                .ok()?
+                .is_dir()
+                .then(|| entry.file_name().to_str().map(str::to_string))?
+        })
+        .collect::<Vec<_>>();
+    names.sort();
+    Ok(names)
+}
+
 fn ensure_dirs(cfg: &RuntimeConfig) -> Result<()> {
     let dirs = [
         &cfg.paths.deployments_dir,
@@ -135,8 +332,7 @@ fn ensure_dirs(cfg: &RuntimeConfig) -> Result<()> {
         if dir.as_os_str().is_empty() {
             continue;
         }
-        std::fs::create_dir_all(dir)
-            .with_context(|| format!("creating directory {:?}", dir))?;
+        std::fs::create_dir_all(dir).with_context(|| format!("creating directory {:?}", dir))?;
     }
     if let Some(parent) = cfg.paths.state_db.parent() {
         if !parent.as_os_str().is_empty() {
@@ -145,4 +341,21 @@ fn ensure_dirs(cfg: &RuntimeConfig) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::attach_self_to_cgroup;
+
+    #[test]
+    fn benchmark_daemon_attaches_only_through_cgroup_procs() {
+        let temp = tempfile::tempdir().unwrap();
+        let procs = temp.path().join("cgroup.procs");
+        attach_self_to_cgroup(&procs).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(procs).unwrap(),
+            std::process::id().to_string()
+        );
+        assert!(attach_self_to_cgroup(&temp.path().join("other")).is_err());
+    }
 }

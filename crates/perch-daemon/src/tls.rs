@@ -30,11 +30,7 @@ pub fn describe_tls_config(config: &RuntimeConfig) -> String {
     match config.tls.mode {
         TlsMode::Off => "TLS disabled (mode=off)".to_string(),
         TlsMode::Acme => {
-            let contact = config
-                .tls
-                .acme_contact
-                .as_deref()
-                .unwrap_or("(none)");
+            let contact = config.tls.acme_contact.as_deref().unwrap_or("(none)");
             let dir = config
                 .tls
                 .acme_directory
@@ -66,21 +62,16 @@ pub fn validate_tls_config(config: &RuntimeConfig) -> Result<()> {
                      (e.g. \"mailto:admin@example.com\")"
                 );
             }
-            std::fs::create_dir_all(&config.paths.acme_cache_dir)
-                .with_context(|| {
-                    format!(
-                        "creating ACME cache dir {:?}",
-                        config.paths.acme_cache_dir
-                    )
-                })?;
+            std::fs::create_dir_all(&config.paths.acme_cache_dir).with_context(|| {
+                format!("creating ACME cache dir {:?}", config.paths.acme_cache_dir)
+            })?;
             Ok(())
         }
         TlsMode::Manual => {
-            let cert = config
-                .tls
-                .tls_cert
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("tls.mode = \"manual\" requires tls.tls_cert"))?;
+            let cert =
+                config.tls.tls_cert.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("tls.mode = \"manual\" requires tls.tls_cert")
+                })?;
             let key = config
                 .tls
                 .tls_key

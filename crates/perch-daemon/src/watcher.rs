@@ -109,10 +109,7 @@ pub fn start(
 
 /// Figure out which deployment directories a burst of events touched.
 /// Returns unique top-level names.
-fn deployments_affected(
-    events: &[DebouncedEvent],
-    deployments_dir: &Path,
-) -> HashSet<String> {
+fn deployments_affected(events: &[DebouncedEvent], deployments_dir: &Path) -> HashSet<String> {
     let mut names = HashSet::new();
     for event in events {
         let rel = match event.path.strip_prefix(deployments_dir) {

@@ -10,13 +10,17 @@
 use crate::config::RuntimeConfig;
 use crate::deployments::DeploymentSupervisor;
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
+    extract::{Path, Query, State},
+    http::{header, HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
-    routing::get,
-    Router,
+    routing::{delete, get, post},
+    Json, Router,
 };
+use base64::Engine;
+use perch_app_host::queue_store::{DeadLetterReplayOutcome, DeadLetterSummary};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tracing::{info, warn};
 
 #[derive(Clone)]
 pub struct AdminState {
@@ -28,11 +32,421 @@ pub struct AdminState {
 pub fn router() -> Router<AdminState> {
     Router::new()
         .route("/", get(dashboard))
-        .route("/deployments/{name}", get(deployment_detail))
+        .route("/deployments/:name", get(deployment_detail))
+        .route("/deployments/:name/health", get(deployment_health))
+        .route("/deployments/:name/memory", get(deployment_memory))
+        .route("/deployments/:name/artifacts", get(deployment_artifacts))
+        .route("/deployments/:name/reload", post(reload_deployment))
+        .route(
+            "/deployments/:name/rollback/:package",
+            post(rollback_deployment),
+        )
+        .route(
+            "/deployments/:name/queues/:queue/dead-letters",
+            get(list_dead_letters),
+        )
+        .route(
+            "/deployments/:name/queues/:queue/dead-letters/:id/replay",
+            post(replay_dead_letter),
+        )
+        .route(
+            "/deployments/:name/queues/:queue/dead-letters/:id",
+            delete(purge_dead_letter),
+        )
+}
+
+async fn deployment_health(State(state): State<AdminState>, Path(name): Path<String>) -> Response {
+    match state.supervisor.activation_status(&name).await {
+        Some(status) => Json(status).into_response(),
+        None => (StatusCode::NOT_FOUND, "Deployment not found").into_response(),
+    }
+}
+
+async fn deployment_memory(
+    State(state): State<AdminState>,
+    Path(name): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = authorize_admin(&state.runtime_cfg, &headers) {
+        return response;
+    }
+    match state.supervisor.memory_status(&name).await {
+        Ok(Some(status)) => Json(status).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "Deployment not found").into_response(),
+        Err(error) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("reading deployment memory status: {error:#}"),
+        )
+            .into_response(),
+    }
+}
+
+async fn reload_deployment(
+    State(state): State<AdminState>,
+    Path(name): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = authorize_admin(&state.runtime_cfg, &headers) {
+        return response;
+    }
+    if headers
+        .get("x-perch-confirm")
+        .and_then(|value| value.to_str().ok())
+        != Some("reload")
+    {
+        return (
+            StatusCode::PRECONDITION_REQUIRED,
+            "reload requires X-Perch-Confirm: reload",
+        )
+            .into_response();
+    }
+    match state.supervisor.load_deployment(&name).await {
+        Ok(()) => Json(serde_json::json!({
+            "deployment": name,
+            "status": "activated"
+        }))
+        .into_response(),
+        Err(error) => (
+            StatusCode::CONFLICT,
+            format!("deployment reload failed: {error:#}"),
+        )
+            .into_response(),
+    }
+}
+
+async fn deployment_artifacts(
+    State(state): State<AdminState>,
+    Path(name): Path<String>,
+) -> Response {
+    match state.supervisor.artifact_status(&name).await {
+        Ok(status) => Json(status).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("reading deployment artifact state: {error:#}"),
+        )
+            .into_response(),
+    }
+}
+
+async fn rollback_deployment(
+    State(state): State<AdminState>,
+    Path((name, package)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = authorize_admin(&state.runtime_cfg, &headers) {
+        return response;
+    }
+    if headers
+        .get("x-perch-confirm")
+        .and_then(|value| value.to_str().ok())
+        != Some("rollback")
+    {
+        return (
+            StatusCode::PRECONDITION_REQUIRED,
+            "rollback requires X-Perch-Confirm: rollback",
+        )
+            .into_response();
+    }
+
+    match state.supervisor.rollback(&name, &package).await {
+        Ok(()) => Json(serde_json::json!({
+            "deployment": name,
+            "active_package": package,
+            "status": "activated"
+        }))
+        .into_response(),
+        Err(error) => (
+            StatusCode::CONFLICT,
+            format!("rollback activation failed: {error:#}"),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct DeadLetterQuery {
+    #[serde(default = "default_dead_letter_limit")]
+    limit: u32,
+    before_failed_at_ms: Option<i64>,
+    before_id: Option<String>,
+}
+
+fn default_dead_letter_limit() -> u32 {
+    50
+}
+
+#[derive(Debug, Serialize)]
+struct DeadLetterPage {
+    deployment: String,
+    queue: String,
+    entries: Vec<DeadLetterEntry>,
+    next_before_failed_at_ms: Option<i64>,
+    next_before_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct DeadLetterEntry {
+    id: String,
+    payload_bytes: u64,
+    attempts: u32,
+    max_attempts: u32,
+    created_at_ms: i64,
+    failed_at_ms: i64,
+    final_error: String,
+}
+
+impl From<DeadLetterSummary> for DeadLetterEntry {
+    fn from(value: DeadLetterSummary) -> Self {
+        Self {
+            id: value.id,
+            payload_bytes: value.payload_bytes,
+            attempts: value.attempts,
+            max_attempts: value.max_attempts,
+            created_at_ms: value.created_at_ms,
+            failed_at_ms: value.failed_at_ms,
+            final_error: value.final_error,
+        }
+    }
+}
+
+async fn list_dead_letters(
+    State(state): State<AdminState>,
+    Path((deployment, queue)): Path<(String, String)>,
+    Query(query): Query<DeadLetterQuery>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = authorize_admin(&state.runtime_cfg, &headers) {
+        return response;
+    }
+    if !(1..=200).contains(&query.limit) {
+        return (
+            StatusCode::BAD_REQUEST,
+            "dead-letter limit must be between 1 and 200",
+        )
+            .into_response();
+    }
+    let cursor = match (query.before_failed_at_ms, query.before_id.as_deref()) {
+        (None, None) => None,
+        (Some(failed_at_ms), Some(id)) => Some((failed_at_ms, id)),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                "dead-letter cursor requires before_failed_at_ms and before_id",
+            )
+                .into_response();
+        }
+    };
+    let Some(store) = state.supervisor.durable_queue_store() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "durable queue service is not configured",
+        )
+            .into_response();
+    };
+    match store
+        .list_dead_letters(&deployment, &queue, query.limit, cursor)
+        .await
+    {
+        Ok(dead_letters) => {
+            let next = dead_letters
+                .last()
+                .map(|entry| (entry.failed_at_ms, entry.id.clone()));
+            let entries = dead_letters
+                .into_iter()
+                .map(DeadLetterEntry::from)
+                .collect();
+            crate::metrics::record_queue_operator_action(
+                &deployment,
+                &queue,
+                "inspect_dlq",
+                "success",
+            );
+            info!(%deployment, %queue, "durable queue DLQ inspected by administrator");
+            Json(DeadLetterPage {
+                deployment,
+                queue,
+                entries,
+                next_before_failed_at_ms: next.as_ref().map(|value| value.0),
+                next_before_id: next.map(|value| value.1),
+            })
+            .into_response()
+        }
+        Err(error) => {
+            crate::metrics::record_queue_operator_action(
+                &deployment,
+                &queue,
+                "inspect_dlq",
+                "error",
+            );
+            warn!(%deployment, %queue, ?error, "durable queue DLQ inspection failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("listing dead letters failed: {error:#}"),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn replay_dead_letter(
+    State(state): State<AdminState>,
+    Path((deployment, queue, id)): Path<(String, String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = authorize_admin(&state.runtime_cfg, &headers) {
+        return response;
+    }
+    if headers
+        .get("x-perch-confirm")
+        .and_then(|value| value.to_str().ok())
+        != Some("replay-dead-letter")
+    {
+        return (
+            StatusCode::PRECONDITION_REQUIRED,
+            "replay requires X-Perch-Confirm: replay-dead-letter",
+        )
+            .into_response();
+    }
+    let Some(store) = state.supervisor.durable_queue_store() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "durable queue service is not configured",
+        )
+            .into_response();
+    };
+    match store.replay_dead_letter(&deployment, &queue, &id).await {
+        Ok(DeadLetterReplayOutcome::Replayed) => {
+            record_dlq_mutation(&deployment, &queue, &id, "replay", "success");
+            Json(serde_json::json!({
+                "deployment": deployment,
+                "queue": queue,
+                "id": id,
+                "status": "replayed"
+            }))
+            .into_response()
+        }
+        Ok(DeadLetterReplayOutcome::NotFound) => {
+            record_dlq_mutation(&deployment, &queue, &id, "replay", "not_found");
+            (StatusCode::NOT_FOUND, "dead letter not found").into_response()
+        }
+        Ok(DeadLetterReplayOutcome::AlreadyLive) => {
+            record_dlq_mutation(&deployment, &queue, &id, "replay", "already_live");
+            (
+                StatusCode::CONFLICT,
+                "message ID is already present in the live queue",
+            )
+                .into_response()
+        }
+        Err(error) => {
+            record_dlq_mutation(&deployment, &queue, &id, "replay", "error");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("dead-letter replay failed: {error:#}"),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn purge_dead_letter(
+    State(state): State<AdminState>,
+    Path((deployment, queue, id)): Path<(String, String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = authorize_admin(&state.runtime_cfg, &headers) {
+        return response;
+    }
+    if headers
+        .get("x-perch-confirm")
+        .and_then(|value| value.to_str().ok())
+        != Some("purge-dead-letter")
+    {
+        return (
+            StatusCode::PRECONDITION_REQUIRED,
+            "purge requires X-Perch-Confirm: purge-dead-letter",
+        )
+            .into_response();
+    }
+    let Some(store) = state.supervisor.durable_queue_store() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "durable queue service is not configured",
+        )
+            .into_response();
+    };
+    match store.purge_dead_letter(&deployment, &queue, &id).await {
+        Ok(true) => {
+            record_dlq_mutation(&deployment, &queue, &id, "purge", "success");
+            Json(serde_json::json!({
+                "deployment": deployment,
+                "queue": queue,
+                "id": id,
+                "status": "purged"
+            }))
+            .into_response()
+        }
+        Ok(false) => {
+            record_dlq_mutation(&deployment, &queue, &id, "purge", "not_found");
+            (StatusCode::NOT_FOUND, "dead letter not found").into_response()
+        }
+        Err(error) => {
+            record_dlq_mutation(&deployment, &queue, &id, "purge", "error");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("dead-letter purge failed: {error:#}"),
+            )
+                .into_response()
+        }
+    }
+}
+
+fn record_dlq_mutation(deployment: &str, queue: &str, id: &str, action: &str, outcome: &str) {
+    crate::metrics::record_queue_operator_action(deployment, queue, action, outcome);
+    info!(
+        deployment,
+        queue,
+        message_id = id,
+        action,
+        outcome,
+        "durable queue DLQ operator action"
+    );
+}
+
+fn authorize_admin(config: &RuntimeConfig, headers: &HeaderMap) -> Result<(), Response> {
+    let Some(expected_hash) = config.admin.password_hash.as_deref() else {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "admin mutations are disabled until admin.password_hash is configured",
+        )
+            .into_response());
+    };
+    let password = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Basic "))
+        .and_then(|encoded| {
+            base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .ok()
+        })
+        .and_then(|decoded| String::from_utf8(decoded).ok())
+        .and_then(|credentials| {
+            let (username, password) = credentials.split_once(':')?;
+            (username == "perch").then(|| password.to_string())
+        });
+    if password.is_some_and(|password| bcrypt::verify(password, expected_hash).unwrap_or(false)) {
+        Ok(())
+    } else {
+        Err(Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .header(header::WWW_AUTHENTICATE, "Basic realm=\"Perch admin\"")
+            .body(axum::body::Body::from("invalid admin credentials"))
+            .unwrap())
+    }
 }
 
 async fn dashboard(State(state): State<AdminState>) -> Response {
-    let router = state.supervisor.current_router().await;
+    let router = state.supervisor.current_router();
     let bunny_enabled = state.runtime_cfg.cdn.bunny.is_some();
     let tls_mode = format!("{:?}", state.runtime_cfg.tls.mode);
 
@@ -64,11 +478,8 @@ async fn dashboard(State(state): State<AdminState>) -> Response {
     Html(html).into_response()
 }
 
-async fn deployment_detail(
-    State(state): State<AdminState>,
-    Path(name): Path<String>,
-) -> Response {
-    let router = state.supervisor.current_router().await;
+async fn deployment_detail(State(state): State<AdminState>, Path(name): Path<String>) -> Response {
+    let router = state.supervisor.current_router();
     match router.get(&name) {
         Some(d) => {
             let bunny_enabled = state.runtime_cfg.cdn.bunny.is_some();

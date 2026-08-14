@@ -29,6 +29,16 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct DeploymentName(pub String);
 
+/// Allocation bounds copied into the immutable route snapshot. Keeping these
+/// beside the matching handler avoids a live-deployment lock before reading
+/// the request body; dispatch validates against the exact active generation
+/// again after the body has been materialized.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HttpRouteLimits {
+    pub max_body_bytes: usize,
+    pub max_header_bytes: usize,
+}
+
 /// What the router decided to do with a request.
 #[derive(Debug, Clone)]
 pub enum RouteMatch {
@@ -43,18 +53,12 @@ pub enum RouteMatch {
         /// Used to strip the mount prefix before looking up on disk.
         mount_prefix: String,
     },
-    /// Forward to a worker. The `tool_name` is the name the deployment
-    /// registers on its `PluginApi`; by convention this is `"route"` for
-    /// the MVP wire protocol (see perch_host_abi::DEPLOYMENT_ROUTE_TOOL).
+    /// Dispatch to the deployment selected by this route. ABI-v2 libraries
+    /// have one required Buffer entry point, so handler/tool metadata stays in
+    /// the immutable route table and is not cloned into every request match.
     WorkerDispatch {
         deployment: DeploymentName,
-        /// The HandlerConfig entry that matched, kept around so the
-        /// dispatcher can add routing metadata (method/path) into the
-        /// DeploymentRequest passed to the worker.
-        handler: HandlerConfig,
-        /// Resolved tool name (explicit `[handlers.tool]` or derived
-        /// from file path).
-        tool_name: String,
+        request_limits: HttpRouteLimits,
     },
     /// No deployment / handler / static block matched.
     NotFound,
@@ -68,15 +72,13 @@ pub struct DeploymentRoutes {
     pub hostnames: Vec<String>,
     pub handlers: Vec<(HandlerConfig, String /* tool_name */)>,
     pub static_blocks: Vec<StaticConfig>,
+    pub request_limits: HttpRouteLimits,
 }
 
 impl DeploymentRoutes {
     /// Build routes from a loaded deployment config and the path to the
     /// deployment's source directory.
-    pub fn from_config(
-        config: &DeploymentConfig,
-        deployment_dir: PathBuf,
-    ) -> Self {
+    pub fn from_config(config: &DeploymentConfig, deployment_dir: PathBuf) -> Self {
         let hostnames = config
             .hosts
             .domains
@@ -102,6 +104,10 @@ impl DeploymentRoutes {
             hostnames,
             handlers,
             static_blocks: config.static_blocks.clone(),
+            request_limits: HttpRouteLimits {
+                max_body_bytes: config.limits.max_request_body_bytes,
+                max_header_bytes: config.limits.max_request_header_bytes,
+            },
         }
     }
 }
@@ -229,7 +235,7 @@ impl RouterState {
         method: &str,
         path: &str,
     ) -> Option<RouteMatch> {
-        for (handler, tool_name) in &deployment.handlers {
+        for (handler, _) in &deployment.handlers {
             if handler.path != path {
                 continue;
             }
@@ -237,15 +243,13 @@ impl RouterState {
                 None | Some("") => {
                     return Some(RouteMatch::WorkerDispatch {
                         deployment: deployment.name.clone(),
-                        handler: handler.clone(),
-                        tool_name: tool_name.clone(),
+                        request_limits: deployment.request_limits,
                     });
                 }
                 Some(m) if m.eq_ignore_ascii_case(method) => {
                     return Some(RouteMatch::WorkerDispatch {
                         deployment: deployment.name.clone(),
-                        handler: handler.clone(),
-                        tool_name: tool_name.clone(),
+                        request_limits: deployment.request_limits,
                     });
                 }
                 _ => continue,
@@ -254,17 +258,16 @@ impl RouterState {
         None
     }
 
-    fn match_static(
-        &self,
-        deployment: &Arc<DeploymentRoutes>,
-        path: &str,
-    ) -> Option<RouteMatch> {
+    fn match_static(&self, deployment: &Arc<DeploymentRoutes>, path: &str) -> Option<RouteMatch> {
         for block in &deployment.static_blocks {
             if path_matches_prefix(path, &block.path) {
                 let mut root = deployment.deployment_dir.clone();
                 // `directory` is relative to the deployment dir. Strip
                 // any leading `./` that might be in the TOML.
-                let dir = block.directory.strip_prefix("./").unwrap_or(&block.directory);
+                let dir = block
+                    .directory
+                    .strip_prefix("./")
+                    .unwrap_or(&block.directory);
                 root.push(dir);
                 return Some(RouteMatch::StaticFile {
                     deployment: deployment.name.clone(),
@@ -324,6 +327,10 @@ mod tests {
             hostnames: hosts.iter().map(|s| s.to_lowercase()).collect(),
             handlers: Vec::new(),
             static_blocks: Vec::new(),
+            request_limits: HttpRouteLimits {
+                max_body_bytes: 1024 * 1024,
+                max_header_bytes: 64 * 1024,
+            },
         }
     }
 
@@ -346,13 +353,15 @@ mod tests {
     #[test]
     fn host_routing_dispatches_by_hostname() {
         let mut chirp = deployment("chirp", &["chirp.io", "www.chirp.io"], "/var/d/chirp");
-        chirp.handlers.push((handler(Some("POST"), "/ingest", "handlers/ingest.ts"), "handlers_ingest".into()));
+        chirp.handlers.push((
+            handler(Some("POST"), "/ingest", "handlers/ingest.ts"),
+            "handlers_ingest".into(),
+        ));
 
         let state = RouterState::build(vec![chirp]);
         match state.route(Some("chirp.io"), "POST", "/ingest").1 {
-            RouteMatch::WorkerDispatch { deployment, tool_name, .. } => {
+            RouteMatch::WorkerDispatch { deployment, .. } => {
                 assert_eq!(deployment.0, "chirp");
-                assert_eq!(tool_name, "handlers_ingest");
             }
             other => panic!("expected WorkerDispatch, got {:?}", other),
         }
@@ -361,7 +370,10 @@ mod tests {
     #[test]
     fn host_routing_is_case_insensitive_and_port_stripping() {
         let mut chirp = deployment("chirp", &["chirp.io"], "/var/d/chirp");
-        chirp.handlers.push((handler(None, "/", "handlers/index.ts"), "handlers_index".into()));
+        chirp.handlers.push((
+            handler(None, "/", "handlers/index.ts"),
+            "handlers_index".into(),
+        ));
 
         let state = RouterState::build(vec![chirp]);
         match state.route(Some("CHIRP.IO:8080"), "GET", "/").1 {
@@ -375,20 +387,18 @@ mod tests {
     #[test]
     fn exact_handler_wins_over_static_catchall() {
         let mut landing = deployment("landing", &["landing.test"], "/var/d/landing");
-        landing
-            .handlers
-            .push((handler(Some("POST"), "/contact", "handlers/contact.ts"), "handlers_contact".into()));
-        landing
-            .static_blocks
-            .push(static_block("/", "static"));
+        landing.handlers.push((
+            handler(Some("POST"), "/contact", "handlers/contact.ts"),
+            "handlers_contact".into(),
+        ));
+        landing.static_blocks.push(static_block("/", "static"));
 
         let state = RouterState::build(vec![landing]);
 
         // POST /contact → handler
         match state.route(Some("landing.test"), "POST", "/contact").1 {
-            RouteMatch::WorkerDispatch { deployment, tool_name, .. } => {
+            RouteMatch::WorkerDispatch { deployment, .. } => {
                 assert_eq!(deployment.0, "landing");
-                assert_eq!(tool_name, "handlers_contact");
             }
             other => panic!("expected WorkerDispatch for POST /contact, got {:?}", other),
         }
@@ -423,7 +433,10 @@ mod tests {
     #[test]
     fn path_prefix_fallback_works_without_host() {
         let mut chirp = deployment("chirp", &["chirp.io"], "/var/d/chirp");
-        chirp.handlers.push((handler(Some("GET"), "/", "handlers/index.ts"), "handlers_index".into()));
+        chirp.handlers.push((
+            handler(Some("GET"), "/", "handlers/index.ts"),
+            "handlers_index".into(),
+        ));
 
         let state = RouterState::build(vec![chirp]);
         // No host header, use path-prefix: /chirp/ → chirp deployment, effective path /

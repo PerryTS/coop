@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 perch-host-abi = { workspace = true }
+perch-app-host = { package = "perch-worker", path = "../perch-worker" }
 
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -18,10 +19,13 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = "0.10"
 bytes = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 futures = { workspace = true }
+libc = "0.2"
+arc-swap = "1"
 
 # Config parsing
 toml = "0.8"
@@ -38,6 +42,7 @@ notify-debouncer-mini = "0.4"
 
 # Base64 for body encoding
 base64 = "0.22"
+bcrypt = "0.17"
 
 # TLS via rustls + ACME (Let's Encrypt)
 rustls = "0.23"
@@ -57,10 +62,11 @@ metrics-exporter-prometheus = "0.16"
 
 # SQLite for schema provisioning + migration runner.
 # Match perry-stdlib's version to avoid libsqlite3-sys "links" conflict.
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
 
 # Chrono for timestamps in admin UI
 chrono = { version = "0.4", features = ["serde"] }
+cron = "0.12"
 
 # CLI parsing
 clap = { version = "4", features = ["derive", "env"] }
@@ -74,3 +80,4 @@ nanoid = "0.4"
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 tempfile = "3"
+tokio-postgres = "0.7.18"

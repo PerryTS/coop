@@ -6,9 +6,9 @@
 //! arrives in Checkpoints 3 and 4.
 
 use crate::config::{RuntimeConfig, TlsMode};
-use crate::deployments::DeploymentSupervisor;
-use crate::router::{DeploymentName, RouteMatch, RouterState};
-use anyhow::{anyhow, Context, Result};
+use crate::deployments::{DeploymentSupervisor, InvocationError};
+use crate::router::{DeploymentName, HttpRouteLimits, RouteMatch, RouterState};
+use anyhow::{Context, Result};
 use axum::{
     body::Body,
     extract::{Request, State},
@@ -17,8 +17,7 @@ use axum::{
     routing::any,
     Router,
 };
-use perch_host_abi::DeploymentRequest;
-use std::collections::HashMap;
+use perch_host_abi::{HttpDispatchRequest, HttpDispatchResponse};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
@@ -69,11 +68,9 @@ pub async fn serve(
     match runtime_cfg.tls.mode {
         TlsMode::Off => {
             // Single HTTP listener — development mode or behind a CDN/proxy.
-            let addr: SocketAddr = runtime_cfg
-                .http
-                .listen_http
-                .parse()
-                .with_context(|| format!("parsing listen_http {:?}", runtime_cfg.http.listen_http))?;
+            let addr: SocketAddr = runtime_cfg.http.listen_http.parse().with_context(|| {
+                format!("parsing listen_http {:?}", runtime_cfg.http.listen_http)
+            })?;
 
             let listener = tokio::net::TcpListener::bind(addr)
                 .await
@@ -106,7 +103,10 @@ pub async fn serve(
 
             let acme_domains = crate::tls::collect_acme_domains(&runtime_cfg, &[]);
             let contact = runtime_cfg.tls.acme_contact.as_deref().unwrap_or("(none)");
-            let acme_dir = runtime_cfg.tls.acme_directory.as_deref()
+            let acme_dir = runtime_cfg
+                .tls
+                .acme_directory
+                .as_deref()
                 .unwrap_or("https://acme-v02.api.letsencrypt.org/directory");
 
             info!(
@@ -159,19 +159,14 @@ pub async fn serve(
 
 /// Dispatch a single incoming request via the `RouterState`.
 async fn dispatch(State(state): State<ListenerState>, req: Request) -> Response {
-    let method = req.method().to_string();
-    let uri = req.uri().clone();
-    let path = uri.path().to_string();
-    let query = uri.query().unwrap_or("").to_string();
-    let host_header = req
-        .headers()
-        .get(axum::http::header::HOST)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-
-    let router = state.supervisor.current_router().await;
-
-    let (effective_path, match_) = router.route(host_header.as_deref(), &method, &path);
+    let router = state.supervisor.current_router();
+    let (effective_path, match_) = router.route(
+        req.headers()
+            .get(axum::http::header::HOST)
+            .and_then(|value| value.to_str().ok()),
+        req.method().as_str(),
+        req.uri().path(),
+    );
 
     match match_ {
         RouteMatch::NotFound => not_found_response(),
@@ -191,9 +186,17 @@ async fn dispatch(State(state): State<ListenerState>, req: Request) -> Response 
             }),
         RouteMatch::WorkerDispatch {
             deployment,
-            handler: _,
-            tool_name: _,
-        } => dispatch_to_worker(state.supervisor, deployment, req, effective_path, query).await,
+            request_limits,
+        } => {
+            dispatch_to_deployment(
+                state.supervisor,
+                deployment,
+                request_limits,
+                req,
+                effective_path,
+            )
+            .await
+        }
     }
 }
 
@@ -227,49 +230,33 @@ async fn serve_static(
 
     let uri = req.uri().clone();
     let mut parts = uri.into_parts();
-    parts.path_and_query = Some(
-        stripped
-            .parse()
-            .unwrap_or_else(|_| "/".parse().unwrap()),
-    );
+    parts.path_and_query = Some(stripped.parse().unwrap_or_else(|_| "/".parse().unwrap()));
     let new_uri = Uri::from_parts(parts).context("rebuilding URI")?;
     *req.uri_mut() = new_uri;
 
     // tower::Service dispatch. ServeDir implements Service<Request<Body>>.
     use tower::ServiceExt;
     let service = ServeDir::new(root).precompressed_gzip();
-    let response = service
-        .oneshot(req)
-        .await
-        .context("ServeDir call failed")?;
+    let response = service.oneshot(req).await.context("ServeDir call failed")?;
 
     // tower-http ServeDir returns `Response<ServeFileSystemResponseBody>`;
     // axum wants `Response<Body>`. The IntoResponse impl does the conversion.
     Ok(response.into_response())
 }
 
-/// Forward a request to the deployment's perch-worker.
-async fn dispatch_to_worker(
+/// Dispatch to the deployment's already-warm runtime.
+async fn dispatch_to_deployment(
     supervisor: Arc<DeploymentSupervisor>,
     deployment: DeploymentName,
+    limits: HttpRouteLimits,
     req: Request,
     effective_path: String,
-    query: String,
 ) -> Response {
-    let client = match supervisor.client_for(&deployment.0).await {
-        Some(c) => c,
-        None => {
-            error!(
-                deployment = %deployment.0,
-                "router matched a deployment with no live worker client"
-            );
-            return internal_error_response("deployment has no live worker");
-        }
-    };
-
+    let started = std::time::Instant::now();
     // Build the DeploymentRequest from the axum request.
     let method = req.method().to_string();
     let scheme = req.uri().scheme_str().unwrap_or("http").to_string();
+    let query = req.uri().query().unwrap_or("").to_string();
     let host = req
         .headers()
         .get(axum::http::header::HOST)
@@ -277,10 +264,29 @@ async fn dispatch_to_worker(
         .unwrap_or("")
         .to_string();
 
-    let mut headers: HashMap<String, String> = HashMap::new();
+    let raw_header_bytes = req.headers().iter().fold(0usize, |total, (name, value)| {
+        total
+            .saturating_add(name.as_str().len())
+            .saturating_add(value.as_bytes().len())
+    });
+    if raw_header_bytes > limits.max_header_bytes {
+        crate::metrics::record_invocation_rejected(&deployment.0, "http", "request_headers");
+        return record_deployment_response(
+            &deployment.0,
+            &method,
+            started,
+            limit_response(
+                StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE,
+                "request_headers_too_large",
+                "request headers exceed the deployment limit",
+            ),
+        );
+    }
+
+    let mut headers = Vec::with_capacity(req.headers().len());
     for (k, v) in req.headers() {
         if let Ok(vs) = v.to_str() {
-            headers.insert(k.as_str().to_ascii_lowercase(), vs.to_string());
+            headers.push((k.as_str().to_ascii_lowercase(), vs.to_string()));
         }
     }
 
@@ -290,64 +296,130 @@ async fn dispatch_to_worker(
         .map(|ci| ci.0.ip().to_string())
         .unwrap_or_default();
 
-    // Consume the body up to a sane limit (the worker enforces
-    // MAX_FRAME_SIZE on its side; we use the same bound here).
-    let body = match axum::body::to_bytes(req.into_body(), perch_host_abi::MAX_FRAME_SIZE).await {
+    // Enforce the deployment limit while consuming the body so a small
+    // configured limit also bounds listener-side allocation.
+    let body = match axum::body::to_bytes(req.into_body(), limits.max_body_bytes).await {
         Ok(b) => b,
         Err(e) => {
             warn!(error = ?e, "reading request body failed");
-            return internal_error_response("request body too large or read error");
+            crate::metrics::record_invocation_rejected(&deployment.0, "http", "request_body");
+            return record_deployment_response(
+                &deployment.0,
+                &method,
+                started,
+                limit_response(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "request_body_too_large",
+                    "request body exceeds the deployment limit or could not be read",
+                ),
+            );
         }
     };
-    let body_base64 = {
-        use base64::Engine;
-        base64::engine::general_purpose::STANDARD.encode(&body)
-    };
-
-    let deployment_req = DeploymentRequest {
-        method,
+    let deployment_req = HttpDispatchRequest {
+        method: method.clone(),
         path: effective_path,
         query,
         headers,
         remote_addr,
         scheme,
         host,
-        body_base64,
+        body: body.to_vec(),
     };
 
-    match client.dispatch(deployment_req).await {
+    let response = match supervisor.dispatch(&deployment.0, deployment_req).await {
         Ok(dep_resp) => build_response(dep_resp),
         Err(e) => {
             error!(
                 deployment = %deployment.0,
                 error = ?e,
-                "worker dispatch failed"
+                "deployment dispatch failed"
             );
-            internal_error_response(&format!("worker dispatch failed: {}", e))
+            invocation_error_response(&e)
         }
+    };
+    record_deployment_response(&deployment.0, &method, started, response)
+}
+
+fn record_deployment_response(
+    deployment: &str,
+    method: &str,
+    started: std::time::Instant,
+    response: Response,
+) -> Response {
+    crate::metrics::record_request(
+        deployment,
+        method,
+        response.status().as_u16(),
+        started.elapsed().as_secs_f64(),
+    );
+    response
+}
+
+fn invocation_error_response(error: &InvocationError) -> Response {
+    match error {
+        InvocationError::Unavailable(_) => limit_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "deployment_unavailable",
+            "deployment is not currently available",
+        ),
+        InvocationError::Overloaded { .. } => Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .header(
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; charset=utf-8",
+            )
+            .header(axum::http::header::RETRY_AFTER, "1")
+            .header("x-perch-error", "overloaded")
+            .body(Body::from("perch: deployment invocation limit is full\n"))
+            .unwrap(),
+        InvocationError::DeadlineExceeded { .. } => limit_response(
+            StatusCode::GATEWAY_TIMEOUT,
+            "deadline_exceeded",
+            "deployment invocation exceeded its wall-clock limit",
+        ),
+        InvocationError::RequestTooLarge { field, .. } => limit_response(
+            if *field == "headers" {
+                StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE
+            } else {
+                StatusCode::PAYLOAD_TOO_LARGE
+            },
+            "request_too_large",
+            "request exceeds the deployment limit",
+        ),
+        InvocationError::ResponseTooLarge { .. } => limit_response(
+            StatusCode::BAD_GATEWAY,
+            "response_too_large",
+            "deployment response exceeds the configured limit",
+        ),
+        InvocationError::Runtime(_) => internal_error_response("deployment dispatch failed"),
     }
 }
 
-fn build_response(dep_resp: perch_host_abi::DeploymentResponse) -> Response {
-    let status = StatusCode::from_u16(dep_resp.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+fn limit_response(status: StatusCode, code: &'static str, message: &'static str) -> Response {
+    Response::builder()
+        .status(status)
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8",
+        )
+        .header("x-perch-error", code)
+        .body(Body::from(format!("perch: {message}\n")))
+        .unwrap()
+}
 
-    let body_bytes = {
-        use base64::Engine;
-        base64::engine::general_purpose::STANDARD
-            .decode(&dep_resp.body_base64)
-            .unwrap_or_default()
-    };
+fn build_response(dep_resp: HttpDispatchResponse) -> Response {
+    let status = StatusCode::from_u16(dep_resp.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
 
     let mut header_map = HeaderMap::new();
     for (k, v) in dep_resp.headers {
         if let (Ok(name), Ok(val)) = (HeaderName::try_from(k), HeaderValue::try_from(v)) {
-            header_map.insert(name, val);
+            header_map.append(name, val);
         }
     }
 
     let mut response = Response::builder()
         .status(status)
-        .body(Body::from(body_bytes))
+        .body(Body::from(dep_resp.body))
         .unwrap();
     *response.headers_mut() = header_map;
     response
@@ -356,7 +428,10 @@ fn build_response(dep_resp: perch_host_abi::DeploymentResponse) -> Response {
 fn not_found_response() -> Response {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
-        .header(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8",
+        )
         .body(Body::from("perch: 404 Not Found\n"))
         .unwrap()
 }
@@ -364,7 +439,10 @@ fn not_found_response() -> Response {
 fn internal_error_response(msg: &str) -> Response {
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .header(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8",
+        )
         .body(Body::from(format!("perch: 500 {}\n", msg)))
         .unwrap()
 }

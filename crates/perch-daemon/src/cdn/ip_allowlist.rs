@@ -98,10 +98,7 @@ async fn fetch_edge_ips() -> Result<HashSet<IpAddr>> {
         .context("fetching Bunny edge IP list")?;
 
     if !resp.status().is_success() {
-        anyhow::bail!(
-            "Bunny edge IP list: HTTP {}",
-            resp.status()
-        );
+        anyhow::bail!("Bunny edge IP list: HTTP {}", resp.status());
     }
 
     let body = resp.text().await.context("reading edge IP body")?;

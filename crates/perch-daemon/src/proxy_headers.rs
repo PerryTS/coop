@@ -31,11 +31,7 @@ pub struct ProxyInfo {
 /// Extract proxy info from headers when the source is a trusted proxy.
 /// `peer_ip` is the direct TCP connection's IP. `trusted` indicates
 /// whether we should trust X-Forwarded-* headers from this peer.
-pub fn extract(
-    headers: &axum::http::HeaderMap,
-    peer_ip: IpAddr,
-    trusted: bool,
-) -> ProxyInfo {
+pub fn extract(headers: &axum::http::HeaderMap, peer_ip: IpAddr, trusted: bool) -> ProxyInfo {
     if !trusted {
         return ProxyInfo {
             client_ip: peer_ip,
