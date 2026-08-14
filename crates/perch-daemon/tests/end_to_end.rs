@@ -1,29 +1,10 @@
-//! End-to-end smoke test for Checkpoint 2.
+//! End-to-end smoke test for the current immutable application contract.
 //!
-//! Spins up a real perch-daemon with a mock deployment pointing at the
-//! existing `hello.dylib` (Phase A.2 artifact), then curls the daemon
-//! and verifies the response flows through daemon → worker → plugin →
-//! response.
-//!
-//! Because the Phase A.2 plugin only registers a `"greet"` tool (not a
-//! `"route"` tool), this test uses a `perch.toml` whose sole handler
-//! points at `tool = "greet"` and expects the dispatch to reach it —
-//! with the current wire protocol the worker will pass the JSON-encoded
-//! DeploymentRequest as the tool's single string arg, and the plugin
-//! will ignore the content and return the fixed `"hello from perry
-//! plugin"` string. perch-worker's DeploymentHost will try to parse
-//! that string as a DeploymentResponse JSON, fail, and return a 500
-//! with the parse error in the body.
-//!
-//! That's the **expected** behavior for the smoke test: it proves the
-//! FULL path (curl → axum → router → worker client → Unix socket →
-//! perch-worker → plugin → reply → back through axum → HTTP response)
-//! is alive and wired up. The plugin returning a non-JSON string is
-//! not the point — the point is that EVERY hop in the chain executes.
-//!
-//! A proper end-to-end test with a real "route" tool lands once Perry
-//! is unblocked and we can compile a plugin that matches the MVP wire
-//! protocol.
+//! The test starts from raw TypeScript, lets Perch compile and publish an
+//! app-only content-addressed package, eagerly activates it in a dedicated
+//! worker, then verifies static and HTTP routing through the complete stack.
+//! It deliberately does not create the removed mutable
+//! `compiled/<deployment>.dylib` legacy layout.
 
 use std::net::TcpListener;
 use std::path::PathBuf;
@@ -47,26 +28,12 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn deployment_dylib() -> PathBuf {
-    // Prefer the v0.5 hello-handler dylib which has a proper `handle` export.
-    let v5 = workspace_root().join("scripts/derisk/build/hello-handler.dylib");
-    if v5.exists() {
-        return v5;
-    }
-    workspace_root().join("scripts/derisk/build/hello.dylib")
-}
-
 fn deployment_name() -> &'static str {
-    // Deployment name must match the dylib stem so module_name_from_path
-    // derives the right Perry symbol name.
     "hello-handler"
 }
 
-fn using_v5() -> bool {
-    deployment_dylib()
-        .file_name()
-        .map(|n| n.to_str().unwrap_or("").contains("hello-handler"))
-        .unwrap_or(false)
+fn perry_binary() -> PathBuf {
+    workspace_root().join(".perry-main/target/perry-dev/perry")
 }
 
 fn perch_worker_binary() -> PathBuf {
@@ -87,13 +54,27 @@ fn perch_daemon_binary() -> PathBuf {
     workspace_root().join("target/release/perch")
 }
 
+fn perry_libraries() -> (PathBuf, PathBuf) {
+    let dir = workspace_root().join("var/perch/lib");
+    let extension = if cfg!(target_os = "macos") {
+        "dylib"
+    } else {
+        "so"
+    };
+    (
+        dir.join(format!("libperry_runtime.{extension}")),
+        dir.join(format!("libperry_stdlib.{extension}")),
+    )
+}
+
 #[tokio::test]
 async fn full_stack_smoke_test() {
+    let (perry_runtime, perry_stdlib) = perry_libraries();
     // Skip the test if prerequisites aren't present.
-    if !deployment_dylib().exists() {
+    if !perry_binary().exists() {
         eprintln!(
-            "SKIP: {} not found — compile hello-handler.ts with perry first",
-            deployment_dylib().display()
+            "SKIP: {} not found — prepare the pinned Perry compiler first",
+            perry_binary().display()
         );
         return;
     }
@@ -109,6 +90,10 @@ async fn full_stack_smoke_test() {
             "SKIP: {} not found — run `cargo build -p perch-daemon`",
             perch_daemon_binary().display()
         );
+        return;
+    }
+    if !perry_runtime.exists() || !perry_stdlib.exists() {
+        eprintln!("SKIP: Perry shared libraries not built");
         return;
     }
 
@@ -133,8 +118,8 @@ async fn full_stack_smoke_test() {
         std::fs::create_dir_all(d).unwrap();
     }
 
-    // Lay out a mock deployment. The deployment name MUST match the dylib
-    // stem so that module_name_from_path derives the correct Perry symbol.
+    // Lay out a raw-source deployment. Compilation must create the immutable
+    // package; a mutable top-level compiled dylib is intentionally absent.
     let dep_name = deployment_name();
     let deployment_dir = deployments_dir.join(dep_name);
     std::fs::create_dir_all(&deployment_dir).unwrap();
@@ -166,12 +151,29 @@ path = "/"
         ),
     )
     .unwrap();
-
-    // Copy the deployment dylib into compiled_dir. Name matches deployment.
-    let ext = if cfg!(target_os = "macos") { "dylib" } else { "so" };
-    let compiled_dylib = compiled_dir.join(format!("{}.{}", dep_name, ext));
-    std::fs::copy(deployment_dylib(), &compiled_dylib).unwrap();
-    let is_v5 = using_v5();
+    std::fs::write(
+        deployment_dir.join("hello-handler.ts"),
+        r#"
+export function handle(_frame: Buffer): Buffer {
+  const body = Buffer.from("echo from perch");
+  const name = Buffer.from("content-type");
+  const value = Buffer.from("text/plain");
+  const output = Buffer.alloc(5 + 2 + 4 + 4 + name.length + 4 + value.length + 4 + body.length);
+  output[0] = 0x50; output[1] = 0x43; output[2] = 0x48; output[3] = 0x32; output[4] = 2;
+  let offset = 5;
+  output.writeUInt16BE(200, offset); offset += 2;
+  output.writeUInt32BE(1, offset); offset += 4;
+  output.writeUInt32BE(name.length, offset); offset += 4;
+  name.copy(output, offset); offset += name.length;
+  output.writeUInt32BE(value.length, offset); offset += 4;
+  value.copy(output, offset); offset += value.length;
+  output.writeUInt32BE(body.length, offset); offset += 4;
+  body.copy(output, offset);
+  return output;
+}
+"#,
+    )
+    .unwrap();
 
     let port = pick_free_port();
 
@@ -184,6 +186,9 @@ path = "/"
 [http]
 listen_http = "127.0.0.1:{port}"
 
+[execution]
+mode = "worker"
+
 [paths]
 deployments_dir = "{}"
 compiled_dir = "{}"
@@ -193,7 +198,9 @@ logs_dir = "{}"
 acme_cache_dir = "{}"
 state_db = "{}"
 perch_worker_binary = "{}"
-perry_binary = "perry"
+perry_binary = "{}"
+perry_runtime_library = "{}"
+perry_stdlib_library = "{}"
 
 [tls]
 mode = "off"
@@ -206,6 +213,9 @@ mode = "off"
             acme_dir.display(),
             var_dir.join("state.sqlite").display(),
             perch_worker_binary().display(),
+            perry_binary().display(),
+            perry_runtime.display(),
+            perry_stdlib.display(),
         ),
     )
     .unwrap();
@@ -260,7 +270,7 @@ mode = "off"
             .send()
             .await
         {
-            if resp.status().is_success() || resp.status() == 404 {
+            if resp.status().is_success() {
                 ready = true;
                 break;
             }
@@ -311,11 +321,7 @@ mode = "off"
         .send()
         .await
         .expect("unknown host GET");
-    assert_eq!(
-        unknown_resp.status(),
-        404,
-        "expected 404 for unknown host"
-    );
+    assert_eq!(unknown_resp.status(), 404, "expected 404 for unknown host");
 
     // TEST 4: path-prefix fallback with no host header.
     let pp_resp = client
@@ -342,28 +348,12 @@ mode = "off"
     eprintln!("api status: {}", api_status);
     eprintln!("api body: {}", api_body);
 
-    if is_v5 {
-        // v0.5 echo-v5.dylib has a proper `handle` function that returns
-        // a valid DeploymentResponse JSON → 200 with the echoed body.
-        assert_eq!(
-            api_status, 200,
-            "expected 200 from v0.5 echo handler, got {}. Body: {}",
-            api_status, api_body
-        );
-        assert!(
-            api_body.contains("echo from perch"),
-            "expected echo body, got: {}",
-            api_body
-        );
-    } else {
-        // v0.4 hello.dylib has a "greet" tool (not "handle") → 500 because
-        // perch-worker can't find the handle function.
-        assert_eq!(
-            api_status, 500,
-            "expected 500 from v0.4 dispatch (no handle export), got {}",
-            api_status
-        );
-    }
+    assert_eq!(
+        api_status, 200,
+        "expected 200 from strict binary handler, got {}. Body: {}",
+        api_status, api_body
+    );
+    assert_eq!(api_body, "echo from perch");
 
     // TEST 6: admin UI.
     let admin_resp = client
