@@ -1,4 +1,8 @@
 target/
+.perry-main/
+.perry-candidate-main/
+.perry-examples-main/
+.celld-main/
 *.o
 *.so
 *.dylib
@@ -22,5 +26,17 @@ var/
 
 # Python / Node artifacts from example deployments
 node_modules/
+.next/
 __pycache__/
 *.pyc
+
+# Machine-local agent state
+.claude/
+
+# Stray build product dropped in the repo root by an ad-hoc perry compile
+/tmp
+
+# Game sprites/sounds/levels + iOS/tvOS app icons left behind by a Perry UI
+# example run in this directory on 2026-04-26. Nothing in Perch references
+# them; kept on disk, deliberately not committed to a server-host repo.
+/assets/

@@ -5,6 +5,7 @@ members = [
     "crates/perch-worker",
     "crates/perch-daemon",
     "crates/perch-cli",
+    "crates/perry-stdlib-shared",
     # perch-derisk-host is the Phase A.2 experiment that proved plugin roundtrip
     # works from Rust. Kept in the workspace so it builds against the same
     # perry-runtime version as the real crates.
@@ -15,6 +16,7 @@ default-members = [
     "crates/perch-worker",
     "crates/perch-cli",
 ]
+exclude = [".perry-main", ".celld-main", ".perry-examples-main"]
 
 [workspace.package]
 version = "0.0.1"
@@ -24,10 +26,11 @@ repository = "https://github.com/skelpo/perch"
 rust-version = "1.75"
 
 [workspace.dependencies]
-# Shared runtime dependency — all crates that link perry-runtime pin to this
-# single version so we don't accidentally ship two copies of the GC/arena.
-perry-runtime = { path = "../perry/perry/crates/perry-runtime" }
-perry-stdlib = { path = "../perry/perry/crates/perry-stdlib", default-features = false, features = ["full"] }
+# Pinned Perry sources used only to package the provider libraries. The daemon
+# and worker deliberately do not link these crates.
+perry-runtime = { path = ".perry-main/crates/perry-runtime" }
+perry-stdlib = { path = ".perry-main/crates/perry-stdlib", default-features = false, features = ["full"] }
+perry-ffi = { path = ".perry-main/crates/perry-ffi" }
 
 # perch crates depend on each other by workspace path
 perch-host-abi = { path = "crates/perch-host-abi" }
@@ -48,4 +51,19 @@ futures = "0.3"
 opt-level = 3
 lto = "thin"
 codegen-units = 1
-strip = false # don't strip — perch-worker needs to keep all perry-runtime symbols visible for dlopen'd plugins to resolve them at flat-namespace lookup time
+strip = false
+
+# Compiler identity hashing reads a large Perry dev binary. Keep this one
+# primitive optimized even in Perch's debug/test builds.
+[profile.dev.package.sha2]
+opt-level = 3
+
+# Exact-profile pair for the deployable Perry stdlib. LTO must remain off so
+# runtime calls stay interposable onto the separately loaded runtime image.
+[profile.perry-shared]
+inherits = "release"
+opt-level = 2
+lto = false
+codegen-units = 16
+panic = "abort"
+strip = false

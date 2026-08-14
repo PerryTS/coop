@@ -1,0 +1,14 @@
+[package]
+name = "perch-perry-stdlib-shared"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "perch_perry_stdlib"
+crate-type = ["cdylib"]
+
+[dependencies]
+perry-stdlib = { workspace = true }
+perry-ffi = { workspace = true }
