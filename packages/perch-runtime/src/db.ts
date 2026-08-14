@@ -1,24 +1,25 @@
-// @perch/runtime — Typed query builder.
-//
-// Wraps Perry's pg stdlib with a fluent API that generates parameterized
-// SQL. The connection URL is read from PERCH_DB_URL (set by perch-worker
-// before spawning the deployment process). Schema namespacing is handled
-// by perch-worker setting the Postgres role's default search_path to
-// `deployment_<name>`, so the runtime library doesn't inject SET
-// search_path — all queries are scoped by the connection's default schema.
-//
-// Usage:
-//   import { db } from "@perch/runtime";
-//
-//   const user = await db.table("users").where({ id: 42 }).first();
-//   await db.table("events").insert({ type: "signup", user_id: 42 });
-//   await db.table("users").where({ id: 42 }).update({ name: "Ralph" });
-//   await db.table("old").where({ expired: true }).delete();
-//
-// Note: Perry's pg stdlib parameterized queries are a Phase B gate item.
-// Until that lands, this module provides the query builder API surface
-// that generates the correct SQL — the actual execution is a stub that
-// logs the query and returns an empty result.
+import { connect, parseConnectionString, type Connection } from "@perry/postgres/src/index";
+
+let conn: Connection | null = null;
+
+async function getConnection(): Promise<Connection> {
+  if (conn !== null) return conn;
+
+  const url = process.env.PERCH_DB_URL;
+  if (!url || url === "") {
+    throw new Error(
+      "PERCH_DB_URL not set. Configure Postgres in runtime.toml " +
+      "[postgres] url and make sure perch-worker sees it as an env var."
+    );
+  }
+
+  conn = await connect(parseConnectionString(url));
+  return conn;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// QueryBuilder
+// ──────────────────────────────────────────────────────────────────────
 
 class QueryBuilder {
   private _table: string = "";
@@ -43,7 +44,6 @@ class QueryBuilder {
       const key = keys[i];
       const val = conditions[key];
       if (typeof val === "object" && val !== null) {
-        // Operator form: { age: { gt: 18 } }
         const ops = Object.keys(val);
         for (let j = 0; j < ops.length; j++) {
           const op = ops[j];
@@ -95,7 +95,6 @@ class QueryBuilder {
     return this;
   }
 
-  // Build the SQL + params for a SELECT query.
   private buildSelect(): { sql: string; params: any[] } {
     const fields = this._selects.length > 0 ? this._selects.join(", ") : "*";
     let sql = "SELECT " + fields + " FROM " + this._table;
@@ -115,36 +114,27 @@ class QueryBuilder {
       sql += " WHERE " + clauses.join(" AND ");
     }
 
-    if (this._groupBy) {
-      sql += " GROUP BY " + this._groupBy;
-    }
-    if (this._orderBy) {
-      sql += " ORDER BY " + this._orderBy + " " + this._orderDir;
-    }
-    if (this._limit !== null) {
-      sql += " LIMIT " + this._limit;
-    }
-    if (this._offset !== null) {
-      sql += " OFFSET " + this._offset;
-    }
+    if (this._groupBy) sql += " GROUP BY " + this._groupBy;
+    if (this._orderBy) sql += " ORDER BY " + this._orderBy + " " + this._orderDir;
+    if (this._limit !== null) sql += " LIMIT " + this._limit;
+    if (this._offset !== null) sql += " OFFSET " + this._offset;
 
     return { sql, params };
   }
 
-  // Execute a SELECT and return all rows.
   async all(): Promise<any[]> {
+    const c = await getConnection();
     const { sql, params } = this.buildSelect();
-    return executeQuery(sql, params);
+    const result = await c.query(sql, params);
+    return result.rows;
   }
 
-  // Execute a SELECT and return the first row, or null.
   async first(): Promise<any | null> {
     this._limit = 1;
     const rows = await this.all();
     return rows.length > 0 ? rows[0] : null;
   }
 
-  // INSERT a row.
   async insert(data: Record<string, any>): Promise<void> {
     const keys = Object.keys(data);
     const placeholders: string[] = [];
@@ -157,10 +147,10 @@ class QueryBuilder {
       "INSERT INTO " + this._table +
       " (" + keys.join(", ") + ")" +
       " VALUES (" + placeholders.join(", ") + ")";
-    await executeQuery(sql, params);
+    const c = await getConnection();
+    await c.query(sql, params);
   }
 
-  // UPDATE rows matching the where clause.
   async update(data: Record<string, any>): Promise<void> {
     const setKeys = Object.keys(data);
     const params: any[] = [];
@@ -182,10 +172,10 @@ class QueryBuilder {
       sql += " WHERE " + whereClauses.join(" AND ");
     }
 
-    await executeQuery(sql, params);
+    const c = await getConnection();
+    await c.query(sql, params);
   }
 
-  // DELETE rows matching the where clause.
   async delete(): Promise<void> {
     const params: any[] = [];
     let sql = "DELETE FROM " + this._table;
@@ -200,25 +190,18 @@ class QueryBuilder {
       sql += " WHERE " + clauses.join(" AND ");
     }
 
-    await executeQuery(sql, params);
+    const c = await getConnection();
+    await c.query(sql, params);
   }
 
-  // Raw SQL escape hatch.
-  async raw(sql: string, params: any[] = []): Promise<any[]> {
-    return executeQuery(sql, params);
+  /// Raw SQL escape hatch — returns rows.
+  async raw(sql: string, params?: any[]): Promise<any[]> {
+    const c = await getConnection();
+    const result = params !== undefined && params.length > 0
+      ? await c.query(sql, params)
+      : await c.query(sql);
+    return result.rows;
   }
-}
-
-// Stub execution — logs the query and returns empty results until
-// Perry's pg parameterized query support (Phase B) is wired.
-async function executeQuery(sql: string, params: any[]): Promise<any[]> {
-  // TODO: Replace with real Perry pg stdlib call:
-  //   import { Pool } from "pg";
-  //   const pool = new Pool({ connectionString: process.env.PERCH_DB_URL });
-  //   const result = await pool.query(sql, params);
-  //   return result.rows;
-  console.log(JSON.stringify({ _perch_db: true, sql: sql, params: params }));
-  return [];
 }
 
 export const db = new QueryBuilder();

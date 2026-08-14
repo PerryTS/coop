@@ -1,44 +1,24 @@
-// Test 8: real Postgres queries via Perry's pg stdlib + async/await.
-//
-// Each request:
-// 1. Connects to Postgres (or reuses cached connection)
-// 2. Inserts a row into `hits` recording the request path
-// 3. Counts total rows
-// 4. Returns JSON {hits: count, path: req.path}
-//
-// Demonstrates the full Perch async story: handler awaits database
-// operations, perch-worker drives Perry's event loop until the Promise
-// resolves, response flows back through the daemon to the client.
-
-import { Client } from "pg";
-
-let client: Client | null = null;
-
-async function getClient(): Promise<Client> {
-  if (client === null) {
-    client = new Client({
-      connectionString: process.env.PERCH_DB_URL || "postgres://postgres@localhost/perch",
-    });
-    await client.connect();
-  }
-  return client;
-}
+import { connect, parseConnectionString } from "@perry/postgres/src/index";
 
 export async function handle(reqJson: string): Promise<string> {
   const req = JSON.parse(reqJson);
 
   try {
-    const c = await getClient();
+    const url = process.env.PERCH_DB_URL;
+    if (!url || url === "") {
+      throw new Error("PERCH_DB_URL not set");
+    }
 
-    // Record this hit (raw query, no params — Perry's pg parameterized
-    // queries are still TBD; we use literal SQL with the path embedded
-    // safely because it comes from req.path which is a controlled value).
-    const path = (req.path || "/").replace(/[^a-zA-Z0-9/._-]/g, "");
-    await c.query("INSERT INTO hits (path) VALUES ('" + path + "')");
+    const conn = await connect(parseConnectionString(url));
+
+    // Insert a hit row.
+    await conn.query("INSERT INTO hits (path) VALUES ('" + req.path + "')");
 
     // Count total hits.
-    const result = await c.query("SELECT COUNT(*) AS n FROM hits");
-    const count = result.rows[0]?.n || 0;
+    const result = await conn.query("SELECT COUNT(*)::int4 AS n FROM hits");
+    const count = result.rows.length > 0 ? (result.rows[0] as any).n : 0;
+
+    await conn.close();
 
     const data = {
       hits: count,
