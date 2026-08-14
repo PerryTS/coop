@@ -285,22 +285,51 @@ cargo test -p perch-worker --test plugin_roundtrip \
 
 ## Reproduce the Next fixture
 
-Build the production Node app and the narrowed Perry application library:
+Install the Next dependencies and build the production Node app once:
 
 ```sh
 cd benchmarks/next-small
 npm ci
 npm run build
+```
 
+Build and validate the shared provider pair with
+`scripts/build-perry-libraries.sh`, then let Perch build the application
+library itself:
+
+```sh
+cargo build --release -p perch-daemon
+scripts/prepare-next-benchmark.sh
+```
+
+That script stages `benchmarks/next-small/perch/perch.toml`,
+`perch/perch-handler.ts` (as `handlers/main.ts`), and
+`app/api/benchmark/route.ts` into `target/next-benchmark/perch-run`, links the
+installed dependency tree, and runs the daemon until it has compiled,
+published, and loaded the `next-bench` package. It prints the published
+`app.dylib` and fails with the daemon log if anything prevents the build, so
+the fixture is never hand-built and a Perry pin bump regenerates it instead of
+rotting. `cargo test -p perch-worker --test binary_http_roundtrip` calls the
+same script automatically whenever no published package matches the pinned
+providers.
+
+The generated `target/next-benchmark/perch-run/runtime.toml` keeps the
+benchmark port (127.0.0.1:4580) so the measurement harness can serve this
+fixture unchanged; the build itself uses an ephemeral port through
+`prepare.toml`.
+
+A narrowed standalone library, outside Perch's pipeline, is still useful when
+bisecting Perry itself:
+
+```sh
+cd benchmarks/next-small
 ../../.perry-main/target/perry-dev/perry compile \
   --no-auto-optimize --output-type dylib \
   -o ../../target/next-benchmark/perch-next-route-direct.dylib \
   perch/perch-handler.ts
 ```
 
-Build and validate the shared provider pair using
-`scripts/build-perry-libraries.sh`, then use the ignored runnable fixture under
-`target/next-benchmark/perch-run`. The common measurement harness is
+The common measurement harness is
 `benchmarks/server-benchmark.mjs`; it validates runtime, iteration count, and
 checksum on every response, records the machine load with each sample, and
 reports process-tree PSS and private-dirty memory alongside RSS on Linux. Set

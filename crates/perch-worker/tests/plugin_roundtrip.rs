@@ -103,8 +103,12 @@ async fn shared_runtime_app_roundtrip() {
     host.shutdown().await.expect("stop app executor");
 }
 
+/// Perry's collector must bound the request/response Buffer pair the host
+/// allocates per invocation. This was ignored while the pinned Perry retained
+/// one such pair per call; Perry #8081 (GC stack maps indexed from loaded
+/// provider apps) fixed it, and 50,000 dispatches now sawtooth between roughly
+/// 30 KiB and 260 KiB of live arena instead of growing without bound.
 #[tokio::test]
-#[ignore = "pinned Perry retains one old-generation request/response Buffer pair per invocation"]
 async fn host_buffer_churn_is_reclaimed_by_perry() {
     let workspace = workspace_root();
     let (runtime, stdlib) = provider_paths(&workspace);
