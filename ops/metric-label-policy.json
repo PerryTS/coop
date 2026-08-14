@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "forbidden_label_keys": [
+    "error",
+    "host",
+    "hostname",
+    "message_id",
+    "package_sha256",
+    "path",
+    "pid",
+    "query",
+    "request_id",
+    "runtime_id",
+    "source_path"
+  ],
+  "labels": {
+    "action": "Fixed authenticated DLQ operation vocabulary.",
+    "cache": "Fixed package/code/Perry cache outcome vocabulary.",
+    "cause": "WorkerPoisonCause enum plus the fixed future_dropped cancellation cause.",
+    "deployment": "Validated configured deployment name; bounded by resident/deployed applications.",
+    "direction": "Fixed sent/received worker-protocol vocabulary.",
+    "entrypoint": "Fixed hello/http/cron/queue/shard-control protocol vocabulary.",
+    "layer": "Fixed package/compiled-code/Perry object/link cache layers.",
+    "method": "Nine standard HTTP methods plus OTHER; public extension methods are normalized.",
+    "operation": "Fixed queue-store call-site vocabulary.",
+    "outcome": "Fixed internal result vocabulary; never an error string.",
+    "phase": "Fixed compiler, transport, and cancellation phase vocabulary.",
+    "queue": "Validated configured queue name; bounded by deployment configuration.",
+    "reason": "Fixed internal rejection, restart, deferral, and shard-failure vocabulary.",
+    "recovered_expired_lease": "Boolean true/false vocabulary.",
+    "schedule": "Validated configured cron expression; bounded by deployment configuration.",
+    "slot": "Configured bounded shard slot index.",
+    "state": "Fixed max/open/available queue-pool vocabulary.",
+    "status": "Valid finite HTTP status-code vocabulary."
+  }
+}

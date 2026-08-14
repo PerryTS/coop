@@ -1,0 +1,166 @@
+name: Linux shared-runtime proof
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-shared-runtime-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-elf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 22 and native dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          . /etc/os-release
+          echo "deb http://apt.llvm.org/${VERSION_CODENAME}/ llvm-toolchain-${VERSION_CODENAME}-22 main" \
+            | sudo tee /etc/apt/sources.list.d/llvm22.list >/dev/null
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            clang-22 llvm-22-dev libpolly-22-dev libzstd-dev libunwind-dev \
+            pkg-config libssl-dev zlib1g-dev
+          prefix="$(llvm-config-22 --prefix)"
+          llvm-config-22 --version | grep -q '^22\.'
+          sudo ln -sf /usr/bin/clang-22 "$prefix/bin/clang"
+          echo "LLVM_SYS_221_PREFIX=$prefix" >> "$GITHUB_ENV"
+          echo "$prefix/bin" >> "$GITHUB_PATH"
+
+      - name: Check out the pinned Perry revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(sed -n 's/^commit = "\([0-9a-f]*\)"/\1/p' perry-main.lock)"
+          test -n "$commit"
+          git init .perry-main
+          git -C .perry-main remote add origin https://github.com/PerryTS/perry.git
+          git -C .perry-main fetch --depth 1 origin "$commit"
+          git -C .perry-main checkout --detach FETCH_HEAD
+          test "$(git -C .perry-main rev-parse HEAD)" = "$commit"
+
+      - name: Build separate providers and server
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/build-perry-libraries.sh
+          test -z "$(git -C .perry-main status --short)"
+          cargo build --release -p perch-daemon -p perch-worker
+          scripts/prepare-resource-benchmark.sh
+
+      - name: Prove ELF provider and application boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime=var/perch/lib/libperry_runtime.so
+          stdlib=var/perch/lib/libperry_stdlib.so
+          app="$(find target/dynamic-smoke/compiled/test1 -mindepth 2 -maxdepth 2 -name app.so -print -quit)"
+          test -f "$runtime" -a -f "$stdlib" -a -f "$app"
+          readelf -d "$runtime" | grep -F 'SONAME' | grep -F 'libperry_runtime.so'
+          readelf -d "$stdlib" | grep -F 'NEEDED' | grep -F 'libperry_runtime.so'
+          readelf -d "$app" | grep -F 'NEEDED' | grep -F 'libperry_runtime.so'
+          readelf -d "$app" | grep -F 'NEEDED' | grep -F 'libperry_stdlib.so'
+          nm -D --defined-only "$app" | awk '{print $3}' | sort > /tmp/perch-app-exports.txt
+          test "$(wc -l < /tmp/perch-app-exports.txt)" -eq 2
+          grep -Fx perch_app_http_v2 /tmp/perch-app-exports.txt
+          grep -Fx perry_module_init /tmp/perch-app-exports.txt
+
+      - name: Delegate a cgroup-v2 subtree for worker enforcement
+        shell: bash
+        run: |
+          set -euo pipefail
+          relative="$(awk -F: '$1 == "0" { print $3 }' /proc/self/cgroup)"
+          parent="/sys/fs/cgroup${relative}"
+          root="${parent}/perch-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test -f "$parent/cgroup.controllers"
+          sudo mkdir "$root"
+          for controller in memory cpu pids; do
+            grep -qw "$controller" "$root/cgroup.controllers"
+          done
+          echo '+memory +cpu +pids' | sudo tee "$root/cgroup.subtree_control" >/dev/null
+          sudo chown "$(id -u):$(id -g)" \
+            "$root" "$root/cgroup.procs" "$root/cgroup.subtree_control"
+          echo "PERCH_DELEGATED_CGROUP_ROOT=${root}" >> "$GITHUB_ENV"
+          echo "PERCH_TEST_CGROUP_ROOT=${root}/workers" >> "$GITHUB_ENV"
+          echo "PERCH_BENCH_CGROUP_ROOT=${root}/benchmarks" >> "$GITHUB_ENV"
+
+      - name: Capture exact Linux benchmark environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata="$(mktemp)"
+          scripts/capture-linux-benchmark-environment.sh > "$metadata"
+          mv "$metadata" linux-benchmark-environment.txt
+
+      - name: Loader, integrity, and lifecycle tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/run-in-delegated-cgroup.sh bash -c '
+            set -euo pipefail
+            cargo test -p perch-host-abi
+            cargo test -p perch-worker --test provider_integrity -- --nocapture
+            cargo test -p perch-daemon --bin perch cgroup::tests -- --nocapture
+            cargo test -p perch-worker --test plugin_roundtrip shared_runtime_app_roundtrip -- --nocapture
+            cargo test -p perch-worker --test plugin_roundtrip repeated_load_dispatch_shutdown_reclaims_executor_threads -- --ignored --nocapture
+            cargo test -p perch-daemon --test auto_compile -- --nocapture
+            cargo test -p perch-worker --test plugin_roundtrip hundred_preloaded_apps_dispatch -- --ignored --nocapture
+          '
+
+      - name: Linux Perry 1/10/100 RSS, PSS, private-dirty, and cgroup evidence
+        shell: bash
+        env:
+          PERCH_BENCH_APP_COUNTS: 1,10,100
+          PERCH_BENCH_TRIALS: "2"
+          PERCH_BENCH_REQUESTS: "2000"
+          PERCH_BENCH_PRELOAD_CONCURRENCY: "4"
+        run: |
+          set -euo pipefail
+          scripts/run-in-delegated-cgroup.sh bash -c '
+            set -euo pipefail
+            cargo test --release -p perch-daemon --test resource_benchmark \
+              measure_in_process_startup_and_rss -- --ignored --nocapture \
+              2>&1 | tee linux-resource-results.txt
+          '
+
+      - name: Linux Node consolidated and isolated RSS, PSS, private-dirty, and cgroup evidence
+        shell: bash
+        env:
+          PERCH_BENCH_NODE_SCENARIOS: 1x1,1x10,1x100,10x1,100x1
+          PERCH_BENCH_TRIALS: "2"
+          PERCH_BENCH_REQUESTS: "2000"
+        run: |
+          set -euo pipefail
+          scripts/run-in-delegated-cgroup.sh bash -c '
+            set -euo pipefail
+            cargo test --release -p perch-daemon --test node_resource_benchmark \
+              measure_node_process_startup_and_rss -- --ignored --nocapture \
+              2>&1 | tee linux-node-resource-results.txt
+          '
+
+      - name: Upload raw Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-shared-runtime-evidence
+          path: |
+            linux-resource-results.txt
+            linux-node-resource-results.txt
+            linux-benchmark-environment.txt
+            target/dynamic-smoke/prepare.log
+          if-no-files-found: warn

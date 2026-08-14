@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: Perch smoke dashboards
+    orgId: 1
+    folder: Perch
+    type: file
+    disableDeletion: true
+    editable: false
+    updateIntervalSeconds: 5
+    options:
+      path: "@DASHBOARD_PATH@"
+      foldersFromFilesStructure: false
