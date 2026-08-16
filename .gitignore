@@ -40,3 +40,6 @@ __pycache__/
 # example run in this directory on 2026-04-26. Nothing in Perch references
 # them; kept on disk, deliberately not committed to a server-host repo.
 /assets/
+
+# mdBook build output
+docs/book/
