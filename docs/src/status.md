@@ -18,6 +18,9 @@ code is authoritative and this page is not.
 - **Content-addressed artifacts** with manifest verification, and rollback that
   re-points rather than recompiles.
 - **Cron and a durable queue**, owned by the worker.
+- **Per-deployment `kv` and object storage** for dedicated workers: the host
+  assigns the Redis key prefix and the storage directory, so an application
+  cannot address another deployment's data.
 - **cgroup limits** on Linux.
 - **Observability**: Prometheus metrics, alerting rules, a Grafana dashboard,
   smoke validation.
@@ -25,9 +28,20 @@ code is authoritative and this page is not.
 
 ## Partial
 
-- **`@perch/runtime`.** `log`, `secrets`, `queue`, `perchFetch` and `db` are
-  wired. **`kv` and `storage` are stubs** — they log the intended operation and
-  return nothing. See [the API page](runtime-api.md).
+- **`@perch/runtime`.** `log` and `queue` are wired end to end. `kv` and
+  `storage` are implemented and reach real backends — Redis through Perry's
+  `ioredis`, and files under a per-deployment directory — but **only for a
+  deployment with its own worker process** (`isolation.class = "dedicated"`),
+  because both are scoped by environment variables one process can only hold one
+  set of. In `in_process` and `sharded` modes they throw rather than share a
+  keyspace or a directory across deployments.
+
+  `secrets`, `db` and `perchFetch` are the remaining half-wired ones: the
+  TypeScript modules are complete, but **nothing in the daemon or worker exports
+  the variables they read** (`PERCH_SECRET_<NAME>`, `PERCH_DB_URL`,
+  `PERCH_FETCH_ALLOWLIST`). `[capabilities]` parses in `perch.toml` and is never
+  read. `perchFetch` in particular is not an egress control today: an empty
+  allowlist permits every domain. See [the API page](runtime-api.md).
 - **`perch.toml` surface.** The keys documented in
   [the reference](perch-toml.md) are what deployments use. The spec describes
   further sections (capabilities, secrets allowlists, cron and queue bindings in

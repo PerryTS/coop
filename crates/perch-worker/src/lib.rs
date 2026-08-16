@@ -5,6 +5,7 @@
 //! in-process and process-isolated deployments use the same ABI checks and the
 //! same thread-affinity rules.
 
+pub mod deployment_env;
 pub mod host;
 pub mod plugin_host;
 pub mod queue_store;
@@ -16,6 +17,10 @@ pub const PERRY_RUNTIME_VERSION: &str = env!("PERCH_PERRY_RUNTIME_VERSION");
 /// Exact Perry main revision accepted by this host.
 pub const PERRY_RUNTIME_COMMIT: &str = env!("PERCH_PERRY_RUNTIME_COMMIT");
 
+pub use deployment_env::{
+    deployment_environment, export_deployment_environment, redis_key_prefix, storage_dir,
+    DeploymentServices,
+};
 pub use runtime_libraries::{
     initialize_runtime_libraries, initialize_runtime_libraries_with_verification,
     perry_provider_identity, register_queue_enqueue_callback, runtime_libraries_loaded,

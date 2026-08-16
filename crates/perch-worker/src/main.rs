@@ -118,6 +118,19 @@ struct Cli {
     #[arg(long, default_value_t = 0)]
     deployment_context_id: u64,
 
+    /// Box-wide Redis URL from `runtime.toml` `[redis] url`. Supplied through
+    /// the environment by the daemon so a password does not appear in process
+    /// arguments. Absent leaves `@perch/runtime`'s `kv` unconfigured, and `kv`
+    /// then throws on use rather than reaching a default server.
+    #[arg(long, env = "PERCH_REDIS_URL")]
+    redis_url: Option<String>,
+
+    /// Box-wide object-storage root from `runtime.toml` `[paths] storage_dir`.
+    /// The worker derives and creates this deployment's own subdirectory and
+    /// exports it as `PERCH_STORAGE_DIR`; the application never sees the root.
+    #[arg(long, env = "PERCH_STORAGE_ROOT")]
+    storage_root: Option<PathBuf>,
+
     /// Host-owned queue database URL. Supplied through the environment by the
     /// daemon so it does not appear in process arguments.
     #[arg(long, env = "PERCH_QUEUE_POSTGRES_URL")]
@@ -221,6 +234,18 @@ fn main() -> anyhow::Result<()> {
                     "shard queue contexts are supplied per loaded deployment"
                 ));
             }
+            // `kv` and `storage` are scoped by process environment, and one
+            // shard process hosts many deployments. Accepting these here would
+            // give every resident application the same key prefix and the same
+            // object-storage directory — a data-isolation break, not a
+            // degraded feature. Refuse rather than export something wrong.
+            if cli.redis_url.is_some() || cli.storage_root.is_some() {
+                return Err(anyhow::anyhow!(
+                    "kv and storage are per-deployment capabilities and cannot be \
+                     configured on a shared shard process; set isolation.class = \
+                     \"dedicated\" for deployments that use them"
+                ));
+            }
             let socket_path = cli
                 .socket
                 .clone()
@@ -279,6 +304,25 @@ fn main() -> anyhow::Result<()> {
                     .collect::<HashMap<_, _>>(),
             )?;
         }
+
+        // `@perch/runtime`'s kv and storage capture their configuration in
+        // module-level `const`s, which Perry evaluates inside
+        // `perry_module_init()` while `DeploymentHost::load*` runs. Export the
+        // deployment environment first or the application reads an empty one.
+        let exported = perch_app_host::export_deployment_environment(
+            deployment,
+            &perch_app_host::DeploymentServices {
+                redis_url: cli.redis_url.as_deref(),
+                storage_root: cli.storage_root.as_deref(),
+            },
+        )?;
+        info!(
+            deployment,
+            exported = exported.len(),
+            kv_configured = cli.redis_url.is_some(),
+            storage_configured = cli.storage_root.is_some(),
+            "exported deployment capability environment"
+        );
 
         let dylib_path = cli
             .dylib
@@ -396,7 +440,7 @@ fn attach_to_cgroup(cgroup_procs: &std::path::Path) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{attach_to_cgroup, Cli};
-    use clap::Parser;
+    use clap::{CommandFactory, Parser};
 
     #[test]
     fn attaches_before_runtime_start_only_through_cgroup_procs() {
@@ -444,6 +488,57 @@ mod tests {
             "/providers/stdlib.so",
         ])
         .is_ok());
+    }
+
+    /// The daemon passes these two through the environment rather than argv so
+    /// a Redis password stays out of the process table (see
+    /// `deployments.rs::spawn_dedicated_worker`). That only works if the names
+    /// match exactly on both sides, and a mismatch is silent: the worker would
+    /// simply see `None` and start a deployment with kv and storage
+    /// unconfigured. Pin the names here so a rename has to break a test.
+    #[test]
+    fn capability_configuration_is_reachable_by_flag_and_by_environment() {
+        let base = [
+            "perch-worker",
+            "--deployment",
+            "alpha",
+            "--dylib",
+            "/immutable/alpha/app.so",
+            "--perry-runtime",
+            "/providers/runtime.so",
+            "--perry-stdlib",
+            "/providers/stdlib.so",
+        ];
+
+        let by_flag = Cli::try_parse_from(base.iter().copied().chain([
+            "--redis-url",
+            "redis://127.0.0.1:6379",
+            "--storage-root",
+            "/var/lib/perch/storage",
+        ]))
+        .expect("explicit flags parse");
+        assert_eq!(by_flag.redis_url.as_deref(), Some("redis://127.0.0.1:6379"));
+        assert_eq!(
+            by_flag.storage_root.as_deref(),
+            Some(std::path::Path::new("/var/lib/perch/storage"))
+        );
+
+        // Absent means "not configured", not "use a default". kv and storage
+        // throw in that state rather than reaching a default server or a
+        // relative directory shared with every other deployment.
+        let unset = Cli::try_parse_from(base).expect("capabilities are optional");
+        assert!(unset.redis_url.is_none() && unset.storage_root.is_none());
+
+        assert_eq!(
+            Cli::command()
+                .get_arguments()
+                .filter_map(|arg| arg.get_env().and_then(|env| env.to_str()))
+                .filter(|env| *env == "PERCH_REDIS_URL" || *env == "PERCH_STORAGE_ROOT")
+                .count(),
+            2,
+            "the daemon sets PERCH_REDIS_URL and PERCH_STORAGE_ROOT; both must \
+             still be declared here or the worker silently sees no configuration"
+        );
     }
 
     #[cfg(unix)]

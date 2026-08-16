@@ -2774,6 +2774,16 @@ impl DeploymentSupervisor {
                     serde_json::to_string(&WorkerQueuePolicies::from_config(config))?,
                 );
         }
+        // `kv` and `storage` are scoped by the worker's own process
+        // environment, which is why they are only offered to a dedicated
+        // worker: one process, one deployment. Both are passed through the
+        // environment rather than argv so a Redis password stays out of the
+        // process table. The worker derives the deployment's key prefix and
+        // storage subdirectory itself; it is never told another deployment's.
+        if let Some(redis) = &self.runtime_cfg.redis {
+            cmd.env("PERCH_REDIS_URL", &redis.url);
+        }
+        cmd.env("PERCH_STORAGE_ROOT", &self.runtime_cfg.paths.storage_dir);
         if let Some(module_name) = module_name {
             cmd.arg("--module-name").arg(module_name);
         }
