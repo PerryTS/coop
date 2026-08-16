@@ -573,31 +573,6 @@ fn validate_provider_dependencies(dylib_path: &Path, output: &[u8]) -> Result<()
     Ok(())
 }
 
-#[cfg(test)]
-mod boundary_tests {
-    use super::validate_provider_dependencies;
-    use std::path::Path;
-
-    #[test]
-    fn provider_dependency_audit_requires_runtime_and_stdlib() {
-        #[cfg(target_os = "macos")]
-        let (both, runtime_only) = (
-            b"@rpath/libperry_runtime.dylib\n@rpath/libperry_stdlib.dylib".as_slice(),
-            b"@rpath/libperry_runtime.dylib".as_slice(),
-        );
-        #[cfg(not(target_os = "macos"))]
-        let (both, runtime_only) = (
-            b"Shared library: [libperry_runtime.so]\nShared library: [libperry_stdlib.so]"
-                .as_slice(),
-            b"Shared library: [libperry_runtime.so]".as_slice(),
-        );
-
-        validate_provider_dependencies(Path::new("app"), both).unwrap();
-        let error = validate_provider_dependencies(Path::new("app"), runtime_only).unwrap_err();
-        assert!(error.to_string().contains("libperry_stdlib"));
-    }
-}
-
 impl Drop for LoadedPlugin {
     fn drop(&mut self) {
         if !self.lib_handle.is_null() {
@@ -709,4 +684,32 @@ pub fn load_deployment(dylib_path: &Path) -> Result<LoadedPlugin> {
             dylib_path, module_name
         )
     })
+}
+
+// Tests live at the end of the file: clippy's `items_after_test_module` fires
+// when definitions follow the `#[cfg(test)]` module, and a reader scanning for
+// production code should not have to page past them.
+#[cfg(test)]
+mod boundary_tests {
+    use super::validate_provider_dependencies;
+    use std::path::Path;
+
+    #[test]
+    fn provider_dependency_audit_requires_runtime_and_stdlib() {
+        #[cfg(target_os = "macos")]
+        let (both, runtime_only) = (
+            b"@rpath/libperry_runtime.dylib\n@rpath/libperry_stdlib.dylib".as_slice(),
+            b"@rpath/libperry_runtime.dylib".as_slice(),
+        );
+        #[cfg(not(target_os = "macos"))]
+        let (both, runtime_only) = (
+            b"Shared library: [libperry_runtime.so]\nShared library: [libperry_stdlib.so]"
+                .as_slice(),
+            b"Shared library: [libperry_runtime.so]".as_slice(),
+        );
+
+        validate_provider_dependencies(Path::new("app"), both).unwrap();
+        let error = validate_provider_dependencies(Path::new("app"), runtime_only).unwrap_err();
+        assert!(error.to_string().contains("libperry_stdlib"));
+    }
 }

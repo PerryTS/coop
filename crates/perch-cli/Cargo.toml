@@ -11,7 +11,10 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { version = "4", features = ["derive"] }
+# `env` is required by `#[arg(long, env = "PERCH_URL", ...)]` in main.rs.
+# Without it clap's derive expands to an `Arg::env` call that does not exist
+# and the crate fails to compile.
+clap = { version = "4", features = ["derive", "env"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tokio = { workspace = true }
