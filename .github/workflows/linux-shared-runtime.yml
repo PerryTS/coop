@@ -38,7 +38,25 @@ jobs:
             pkg-config libssl-dev zlib1g-dev
           prefix="$(llvm-config-22 --prefix)"
           llvm-config-22 --version | grep -q '^22\.'
-          sudo ln -sf /usr/bin/clang-22 "$prefix/bin/clang"
+          # apt.llvm.org now ships `$prefix/bin/clang` itself, and `/usr/bin/clang-22`
+          # resolves to that same file -- so `ln -sf` refuses with "are the same
+          # file", exit 1, and `set -e` kills the job during dependency install.
+          # That is how this proof came to fail before running a single step of
+          # what it exists to prove.
+          #
+          # What the build actually needs is a usable `clang` on `$prefix/bin`
+          # (added to PATH below). So assert THAT, and only create the link when
+          # it is missing. Asserting the postcondition rather than the success of
+          # the `ln` is the point: the packaging can change again, and a check on
+          # the end state survives it either way.
+          if ! "$prefix/bin/clang" --version >/dev/null 2>&1; then
+            sudo ln -sf /usr/bin/clang-22 "$prefix/bin/clang"
+          fi
+          "$prefix/bin/clang" --version | grep -qE '\bversion 22\.' || {
+            echo "::error::$prefix/bin/clang is missing or is not LLVM 22:"
+            "$prefix/bin/clang" --version || true
+            exit 1
+          }
           echo "LLVM_SYS_221_PREFIX=$prefix" >> "$GITHUB_ENV"
           echo "$prefix/bin" >> "$GITHUB_PATH"
 
