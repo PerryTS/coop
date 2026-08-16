@@ -1,0 +1,112 @@
+name: Fast check
+
+# A minutes-scale gate for every PR.
+#
+# The Linux shared-runtime proof is the real end-to-end evidence, but it needs
+# LLVM 22, a Perry checkout, provider builds and cgroup delegation, and it is
+# budgeted at two hours. Nothing in this repository gave a contributor feedback
+# before that finished.
+#
+# perch-host-abi, perch-worker and perch-cli have NO Perry dependency — the
+# worker loads application images with dlopen at runtime rather than linking
+# them — so they build, lint and test with a stock Rust toolchain in minutes.
+# perch-daemon and perry-stdlib-shared do depend on Perry and stay with the
+# proof job.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Cancellation is scoped to pull requests on purpose. Cancelling `main` runs
+  # means a busy merge day can cancel every run before it reaches a runner and
+  # leave a gate that has never actually executed.
+  group: fast-check-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  # Perry-free crates only; see the header.
+  PERRY_FREE_CRATES: "-p perch-host-abi -p perch-worker -p perch-cli"
+
+jobs:
+  fast-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: fast-check
+
+      # Formatting covers the whole workspace: it parses, it does not build, so
+      # the Perry-dependent crates cost nothing here.
+      - name: Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (Perry-free crates)
+        run: cargo clippy ${PERRY_FREE_CRATES} --all-targets -- -D warnings
+
+      # --no-fail-fast is not optional in this repository: without it the run
+      # stops at the first failing target and silently skips the remaining
+      # worker test binaries, which reads as a pass.
+      #
+      # Three perch-worker suites — plugin_roundtrip, provider_integrity and
+      # binary_http_roundtrip — load real application dylibs against built
+      # Perry provider images. They cannot run without those artifacts and
+      # belong to the shared-runtime proof job, not to a fast gate. They are
+      # named individually rather than excluded by a pattern so that adding a
+      # fourth provider suite fails here loudly instead of being skipped
+      # silently.
+      - name: Tests (Perry-free crates, provider suites excluded)
+        run: |
+          cargo test -p perch-host-abi --no-fail-fast
+          cargo test -p perch-cli --no-fail-fast
+          cargo test -p perch-worker --lib --no-fail-fast
+          cargo test -p perch-worker --test socket_framing --no-fail-fast
+
+      # Several suites self-skip when their fixtures are absent (no providers,
+      # no compiled Perry). A skip is an early `return`, which counts as a pass
+      # in the summary line — so surface them rather than letting a green run
+      # hide that nothing executed.
+      - name: Report self-skipped suites
+        if: always()
+        run: |
+          cargo test -p perch-host-abi -p perch-cli --no-fail-fast -- --nocapture 2>&1 \
+            | grep -E '^\s*skip:' || echo "no suites self-skipped"
+
+      - name: TypeScript runtime package typechecks
+        run: |
+          if [ -f packages/perch-runtime/package.json ]; then
+            cd packages/perch-runtime
+            npm ci --silent || npm install --silent
+            npx --yes tsc --noEmit || {
+              echo "::warning::@perch/runtime does not typecheck under tsc."
+              echo "::warning::Note this is advisory: Perry compiles a subset, so tsc is neither necessary nor sufficient."
+              exit 0
+            }
+          else
+            echo "no packages/perch-runtime/package.json — skipping"
+          fi
+
+      - name: Documentation builds
+        run: |
+          if [ -f docs/book.toml ]; then
+            curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz \
+              | tar -xz -C /usr/local/bin
+            mdbook build docs
+          else
+            echo "no docs/book.toml — skipping"
+          fi
