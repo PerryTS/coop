@@ -787,6 +787,50 @@ mod tests {
         assert_eq!(decode_http_request(&frame).unwrap(), request);
     }
 
+    /// The Coop rebrand changed `APP_FRAME_MAGIC` from `PCH2` to `COOP`, and
+    /// the safety story for that break is "an image built against the old magic
+    /// is refused, not misread". That was asserted in a commit message and
+    /// tested nowhere, so this pins it.
+    ///
+    /// The pair is what makes it discriminating. Rejecting a corrupt frame
+    /// proves nothing on its own -- a decoder that rejected everything would
+    /// pass that half. The same frame, differing only in its four magic bytes,
+    /// must decode cleanly with `COOP` and be refused with `PCH2`.
+    #[test]
+    fn a_frame_carrying_the_retired_pch2_magic_is_refused_not_misread() {
+        let request = HttpDispatchRequest {
+            method: "GET".into(),
+            path: "/health".into(),
+            query: String::new(),
+            headers: vec![("accept".into(), "application/json".into())],
+            remote_addr: "127.0.0.1".into(),
+            scheme: "http".into(),
+            host: "example.test".into(),
+            body: Vec::new(),
+        };
+
+        let frame = encode_http_request(&request).unwrap();
+        assert_eq!(&frame[..4], b"COOP", "current magic");
+        assert_eq!(
+            decode_http_request(&frame).unwrap(),
+            request,
+            "the control half: this frame is otherwise entirely valid"
+        );
+
+        // Byte-for-byte identical apart from the retired magic -- exactly what a
+        // still-deployed pre-rebrand application image would send.
+        let mut stale = frame.clone();
+        stale[..4].copy_from_slice(b"PCH2");
+        assert_eq!(stale.len(), frame.len());
+
+        let err = decode_http_request(&stale)
+            .expect_err("a PCH2 frame must be refused, never decoded as a COOP one");
+        assert!(
+            matches!(err, HttpFrameError::Invalid(m) if m.contains("magic")),
+            "the refusal should name the magic, got: {err:?}"
+        );
+    }
+
     #[test]
     fn binary_http_response_round_trip_preserves_raw_body() {
         let response = HttpDispatchResponse {

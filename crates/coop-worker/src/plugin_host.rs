@@ -691,8 +691,66 @@ pub fn load_deployment(dylib_path: &Path) -> Result<LoadedPlugin> {
 // production code should not have to page past them.
 #[cfg(test)]
 mod boundary_tests {
-    use super::validate_provider_dependencies;
+    use super::{validate_manifest, validate_provider_dependencies, APP_LIBRARY_ABI_VERSION};
+    use coop_host_abi::AppLibraryManifest;
     use std::path::Path;
+
+    fn manifest_with_abi_version(abi_version: u32) -> AppLibraryManifest {
+        serde_json::from_value(serde_json::json!({
+            "abi_version": abi_version,
+            "deployment": "example",
+            "perry_version": "0.0.0-not-the-host-version",
+            "perry_commit": "0000000000000000000000000000000000000000",
+            "compiler_sha256": "0".repeat(64),
+            "target": "aarch64-apple-darwin",
+            "init_symbol": "perry_module_init",
+            "handle_symbol": "handle",
+            "handler_abi": "wrapped",
+        }))
+        .expect("manifest fixture should deserialize")
+    }
+
+    /// The rebrand bumped `APP_LIBRARY_ABI_VERSION` 2 -> 3 precisely so that a
+    /// pre-rebrand image fails as a *named version mismatch at load* rather
+    /// than as a frame decode failing somewhere inside a request. Nothing
+    /// tested that, so this does.
+    ///
+    /// Both halves are needed. That version 2 is refused says little by itself
+    /// -- `validate_manifest` also rejects on `perry_version`, which this
+    /// fixture deliberately gets wrong, so a test asserting only "it errored"
+    /// would pass even if the ABI check were deleted. What discriminates is
+    /// *which* error: the stale image must be refused by the ABI arm and name
+    /// both versions, while the current one must get past that arm and fail
+    /// somewhere else.
+    #[test]
+    fn a_pre_rebrand_abi_version_is_refused_by_name_at_load() {
+        let stale = validate_manifest(&manifest_with_abi_version(2), Path::new("/tmp/app.dylib"))
+            .expect_err("ABI version 2 predates the Coop rebrand and must be refused");
+        let stale = format!("{stale}");
+        assert!(
+            stale.contains("app-library ABI mismatch"),
+            "refusal should be the ABI arm, got: {stale}"
+        );
+        assert!(
+            stale.contains("library=2")
+                && stale.contains(&format!("host={APP_LIBRARY_ABI_VERSION}")),
+            "refusal should name both versions so an operator knows to recompile, got: {stale}"
+        );
+
+        // The control half: the current version clears the ABI arm. It still
+        // fails -- the fixture's perry_version is not the host's -- but on a
+        // different check, which is what proves the ABI arm is selective.
+        let current = validate_manifest(
+            &manifest_with_abi_version(APP_LIBRARY_ABI_VERSION),
+            Path::new("/tmp/app.dylib"),
+        )
+        .expect_err("fixture has a deliberately wrong perry_version");
+        let current = format!("{current}");
+        assert!(
+            !current.contains("app-library ABI mismatch"),
+            "the current ABI version must clear the ABI arm, got: {current}"
+        );
+    }
 
     #[test]
     fn provider_dependency_audit_requires_runtime_and_stdlib() {
