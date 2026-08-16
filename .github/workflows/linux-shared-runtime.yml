@@ -10,8 +10,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: linux-shared-runtime-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Scoped to pull requests, and keyed by SHA rather than ref for everything
+  # else. Both halves matter, and this job had neither.
+  #
+  # `github.ref` is constant on `main`, so every merge landed in the same
+  # concurrency group as the previous one and cancelled it. With an
+  # unconditional `cancel-in-progress`, and a runner queue that has held jobs
+  # for over an hour here, a normal merge day cancels each `main` run before it
+  # reaches a runner -- the proof never executes and never reports. Run
+  # 31950622999 is an instance: cancelled after 20 seconds by the next merge.
+  #
+  # Cancelling a superseded *pull request* run is still right: it is the same
+  # branch, re-pushed, and the older result is genuinely obsolete.
+  group: linux-shared-runtime-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   native-elf:
