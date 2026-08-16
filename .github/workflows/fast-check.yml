@@ -104,8 +104,12 @@ jobs:
       - name: Report self-skipped suites
         if: always()
         run: |
-          cargo test -p perch-host-abi -p perch-cli --no-fail-fast -- --nocapture 2>&1 \
-            | grep -E '^\s*skip:' || echo "no suites self-skipped"
+          # Case-insensitive and unanchored on purpose: this repository prints
+          # BOTH `skip:` (12 sites) and `SKIP:` (10 sites), and an anchored
+          # lowercase pattern silently saw only half of them — a skip-detector
+          # that cannot see skips is the exact failure this step exists to catch.
+          cargo test -p perch-host-abi -p perch-cli -p perch-worker --no-fail-fast -- --nocapture 2>&1 \
+            | grep -iE 'skip:' || echo "no suites self-skipped"
 
       - name: TypeScript runtime package typechecks
         run: |
