@@ -1,5 +1,5 @@
 -- Contact form submissions table.
--- Applied by perch-daemon at deploy time.
+-- Applied by coop-daemon at deploy time.
 CREATE TABLE IF NOT EXISTS contact_submissions (
     id SERIAL PRIMARY KEY,
     email TEXT NOT NULL,

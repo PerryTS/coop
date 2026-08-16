@@ -79,8 +79,8 @@ emit load_average "$(tr ' ' ',' < /proc/loadavg)"
 emit cgroup_filesystem "$(stat -fc %T /sys/fs/cgroup)"
 emit cgroup_membership "$(awk -F: '$1 == "0" {print $3}' /proc/self/cgroup)"
 emit cgroup_root_controllers "$(tr ' ' ',' < /sys/fs/cgroup/cgroup.controllers)"
-emit delegated_cgroup_root "${PERCH_DELEGATED_CGROUP_ROOT:-unset}"
-emit benchmark_cgroup_root "${PERCH_BENCH_CGROUP_ROOT:-unset}"
+emit delegated_cgroup_root "${COOP_DELEGATED_CGROUP_ROOT:-unset}"
+emit benchmark_cgroup_root "${COOP_BENCH_CGROUP_ROOT:-unset}"
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   emit workspace_git_head "$(git rev-parse HEAD)"
@@ -131,11 +131,11 @@ else
   emit esbuild unset
 fi
 
-provider_runtime="${PERCH_BENCH_RUNTIME:-var/perch/lib/libperry_runtime.so}"
-provider_stdlib="${PERCH_BENCH_STDLIB:-var/perch/lib/libperry_stdlib.so}"
+provider_runtime="${COOP_BENCH_RUNTIME:-var/coop/lib/libperry_runtime.so}"
+provider_stdlib="${COOP_BENCH_STDLIB:-var/coop/lib/libperry_stdlib.so}"
 provider_package_dir="$(dirname -- "$provider_runtime")"
 provider_manifest="$provider_package_dir/perry-libraries.json"
-emit provider_verification "${PERCH_BENCH_PROVIDER_VERIFICATION:-full_hash}"
+emit provider_verification "${COOP_BENCH_PROVIDER_VERIFICATION:-full_hash}"
 emit provider_package_dir "$(readlink -f -- "$provider_package_dir")"
 file_identity provider_manifest "$provider_manifest"
 if [[ -f "$provider_manifest" ]]; then
@@ -146,10 +146,10 @@ if [[ -f "$provider_manifest" ]]; then
   emit perry_runtime_metadata "$(stat -c '%u:%g:%a:%F' -- "$provider_runtime")"
   emit perry_stdlib_metadata "$(stat -c '%u:%g:%a:%F' -- "$provider_stdlib")"
 fi
-file_identity perch_daemon target/release/perch
-file_identity perch_worker target/release/perch-worker
-if [[ -n "${PERCH_CELLD_BINARY:-}" ]]; then
-  file_identity celld_binary "$PERCH_CELLD_BINARY"
+file_identity coop_daemon target/release/coop
+file_identity coop_worker target/release/coop-worker
+if [[ -n "${COOP_CELLD_BINARY:-}" ]]; then
+  file_identity celld_binary "$COOP_CELLD_BINARY"
 else
   emit celld_binary_path unset
 fi

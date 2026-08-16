@@ -1,0 +1,13 @@
+name = "test2"
+version = "0.1.0"
+
+# Test 2: static-only deployment (no handler invocations).
+# Baseline for static file serving — the daemon serves these directly,
+# no coop-worker hop, no Perry runtime touched per request.
+
+[hosts]
+domains = ["coop-test2.perryts.com"]
+
+[[static]]
+directory = "./static"
+path = "/"

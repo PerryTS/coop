@@ -11,7 +11,7 @@
 export function handle(reqJson: string): string {
   const req = JSON.parse(reqJson);
 
-  const body = "echo from perch\n" +
+  const body = "echo from coop\n" +
     "method: " + req.method + "\n" +
     "path: " + req.path + "\n" +
     "host: " + req.host;

@@ -1,18 +1,18 @@
 [package]
-name = "perch-derisk-host"
+name = "coop-derisk-host"
 version = "0.0.1"
 edition = "2021"
 publish = false
 
 # Phase A.2 — proves a Rust binary can act as a Perry plugin host: link
 # perry-runtime, dlopen a Perry-compiled .dylib, call into the plugin's
-# registered tools. This is the seed of perch-worker (which now lives in
-# crates/perch-worker/). Kept in the workspace so it builds against the
+# registered tools. This is the seed of coop-worker (which now lives in
+# crates/coop-worker/). Kept in the workspace so it builds against the
 # same perry-runtime version as the real crates.
 
 [dependencies]
 perry-runtime = { workspace = true }
 
 [[bin]]
-name = "perch-derisk-host"
+name = "coop-derisk-host"
 path = "src/main.rs"

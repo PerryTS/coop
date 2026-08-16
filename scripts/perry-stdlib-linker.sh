@@ -57,7 +57,7 @@ done
 custom_export_list=""
 if [[ -n "$original_export_list" ]]; then
   if [[ "$saw_runtime_rlib" == "true" ]]; then
-    custom_export_list="$(mktemp "${TMPDIR:-/tmp}/perch-perry-exports.XXXXXX")"
+    custom_export_list="$(mktemp "${TMPDIR:-/tmp}/coop-perry-exports.XXXXXX")"
     # Keep stdlib's intended C exports plus every public symbol from the runtime
     # dylib. The latter makes Rust-level runtime calls interposable too, without
     # exporting hundreds of thousands of unrelated dependency symbols.
@@ -74,7 +74,7 @@ fi
 if [[ "$saw_runtime_rlib" == "true" && "$host_os" == "Darwin" ]]; then
   # stdlib's fallback generic code may contain duplicate public runtime
   # definitions. Flat/interposable binding guarantees every reference selects
-  # the process-first runtime image loaded by Perch.
+  # the process-first runtime image loaded by Coop.
   args+=("-Wl,-rpath,@loader_path" "-Wl,-flat_namespace" "-Wl,-interposable")
 elif [[ "$saw_runtime_rlib" == "true" ]]; then
   args+=('-Wl,-rpath,$ORIGIN' '-Wl,-soname,libperry_stdlib.so')

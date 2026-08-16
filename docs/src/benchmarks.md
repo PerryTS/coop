@@ -1,6 +1,6 @@
 # Benchmarks
 
-Perch's premise is memory density and cheap marginal deployments. Whether it
+Coop's premise is memory density and cheap marginal deployments. Whether it
 delivers on **per-request cost** is a separate question, and the honest current
 answer is: not yet, against Node.
 
@@ -9,7 +9,7 @@ This page states what has actually been measured and what each number is worth.
 
 ## Read this before quoting any figure
 
-Perch's earlier published comparison used a benchmark adapter that **skipped most
+Coop's earlier published comparison used a benchmark adapter that **skipped most
 of the framework**. It constructed a `NextRequest`, invoked the route function,
 ran `NextResponse.json`, and then emitted a fixed payload directly — it did not
 run Next's private `AppRouteRouteModule.handle`, AsyncLocalStorage work stores,
@@ -17,7 +17,7 @@ the production webpack route loader, query parsing, or response stream
 extraction.
 
 Those omissions favour Perry. The document says so itself: *"the row cannot
-support a full-Next performance claim."* Any figure showing Perch ahead of Node
+support a full-Next performance claim."* Any figure showing Coop ahead of Node
 on CPU or RSS that predates a verified full-handler run should be read as a
 **lower bound on Perry's cost**, not a result.
 
@@ -49,9 +49,9 @@ the working set under load that inverts.
 - `PERRY_RS4GC=0` — the shadow-frame GC lowering, not the aarch64 default.
 - Perry's RSS was still climbing (161.8 → 270.7 MiB), so it may not have reached
   steady state.
-- The **perch-hosted** row is missing: that shape died under sustained load with
+- The **coop-hosted** row is missing: that shape died under sustained load with
   a GC-rooting signature, on artifacts predating the fix for it. Until it is
-  re-measured, Perch's own hosting overhead is unquantified.
+  re-measured, Coop's own hosting overhead is unquantified.
 
 ## Density
 

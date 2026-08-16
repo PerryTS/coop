@@ -8,25 +8,25 @@ set -euo pipefail
 # first-cell activation separately through the common harness.
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-fixture_root="${PERCH_WORKER_BENCH_ROOT:-$repo_root/target/worker-mechanism-benchmark}"
-perry_fixture="${PERCH_BENCH_PERRY_FIXTURE:-$repo_root/benchmarks/worker-perry}"
-daemon="${PERCH_BENCH_DAEMON:-$repo_root/target/release/perch}"
-perry="${PERCH_BENCH_PERRY:-$repo_root/.perry-main/target/perry-dev/perry}"
-runtime="${PERCH_BENCH_RUNTIME:-$repo_root/var/perch/lib/libperry_runtime.so}"
-stdlib="${PERCH_BENCH_STDLIB:-$repo_root/var/perch/lib/libperry_stdlib.so}"
-perry_port="${PERCH_WORKER_PERRY_PORT:-4580}"
-node_port="${PERCH_WORKER_NODE_PORT:-4581}"
-trials="${PERCH_BENCH_TRIALS:-3}"
-requests="${PERCH_BENCH_REQUESTS:-20000}"
-concurrency="${PERCH_BENCH_CONCURRENCY:-50}"
-include_celld="${PERCH_BENCH_INCLUDE_CELLD:-0}"
-provider_verification="${PERCH_BENCH_PROVIDER_VERIFICATION:-full_hash}"
-gc_reclaim_check_interval="${PERCH_BENCH_GC_RECLAIM_CHECK_INTERVAL:-0}"
-gc_reclaim_growth_bytes="${PERCH_BENCH_GC_RECLAIM_GROWTH_BYTES:-262144}"
+fixture_root="${COOP_WORKER_BENCH_ROOT:-$repo_root/target/worker-mechanism-benchmark}"
+perry_fixture="${COOP_BENCH_PERRY_FIXTURE:-$repo_root/benchmarks/worker-perry}"
+daemon="${COOP_BENCH_DAEMON:-$repo_root/target/release/coop}"
+perry="${COOP_BENCH_PERRY:-$repo_root/.perry-main/target/perry-dev/perry}"
+runtime="${COOP_BENCH_RUNTIME:-$repo_root/var/coop/lib/libperry_runtime.so}"
+stdlib="${COOP_BENCH_STDLIB:-$repo_root/var/coop/lib/libperry_stdlib.so}"
+perry_port="${COOP_WORKER_PERRY_PORT:-4580}"
+node_port="${COOP_WORKER_NODE_PORT:-4581}"
+trials="${COOP_BENCH_TRIALS:-3}"
+requests="${COOP_BENCH_REQUESTS:-20000}"
+concurrency="${COOP_BENCH_CONCURRENCY:-50}"
+include_celld="${COOP_BENCH_INCLUDE_CELLD:-0}"
+provider_verification="${COOP_BENCH_PROVIDER_VERIFICATION:-full_hash}"
+gc_reclaim_check_interval="${COOP_BENCH_GC_RECLAIM_CHECK_INTERVAL:-0}"
+gc_reclaim_growth_bytes="${COOP_BENCH_GC_RECLAIM_GROWTH_BYTES:-262144}"
 
 if [[ "$(uname -s)" == Darwin ]]; then
-  runtime="${PERCH_BENCH_RUNTIME:-$repo_root/var/perch/lib/libperry_runtime.dylib}"
-  stdlib="${PERCH_BENCH_STDLIB:-$repo_root/var/perch/lib/libperry_stdlib.dylib}"
+  runtime="${COOP_BENCH_RUNTIME:-$repo_root/var/coop/lib/libperry_runtime.dylib}"
+  stdlib="${COOP_BENCH_STDLIB:-$repo_root/var/coop/lib/libperry_stdlib.dylib}"
 fi
 
 for required in \
@@ -34,7 +34,7 @@ for required in \
   "$perry" \
   "$runtime" \
   "$stdlib" \
-  "$perry_fixture/perch.toml" \
+  "$perry_fixture/coop.toml" \
   "$perry_fixture/handlers/main.ts" \
   "$repo_root/benchmarks/worker-node/server.mjs"; do
   if [[ ! -f "$required" ]]; then
@@ -59,12 +59,12 @@ if [[ "$perry_port" == "$node_port" ]]; then
   exit 1
 fi
 if [[ "$include_celld" != 0 && "$include_celld" != 1 ]]; then
-  echo "PERCH_BENCH_INCLUDE_CELLD must be 0 or 1" >&2
+  echo "COOP_BENCH_INCLUDE_CELLD must be 0 or 1" >&2
   exit 1
 fi
 if [[ "$provider_verification" != full_hash \
   && "$provider_verification" != root_owned_immutable ]]; then
-  echo "PERCH_BENCH_PROVIDER_VERIFICATION must be full_hash or root_owned_immutable" >&2
+  echo "COOP_BENCH_PROVIDER_VERIFICATION must be full_hash or root_owned_immutable" >&2
   exit 1
 fi
 if ! [[ "$gc_reclaim_check_interval" =~ ^[0-9]+$ ]] \
@@ -88,8 +88,8 @@ mkdir -p \
   "$fixture_root/storage" \
   "$fixture_root/logs" \
   "$fixture_root/acme"
-cp "$perry_fixture/perch.toml" \
-  "$fixture_root/deployments/worker-benchmark/perch.toml"
+cp "$perry_fixture/coop.toml" \
+  "$fixture_root/deployments/worker-benchmark/coop.toml"
 cp "$perry_fixture/handlers/main.ts" \
   "$fixture_root/deployments/worker-benchmark/handlers/main.ts"
 
@@ -127,9 +127,9 @@ EOF
 
 # Reset only this generated benchmark deployment's active pointer. Otherwise a
 # previous run with different source/configuration can restore its old package
-# while `perch build` merely prebuilds (but does not activate) the new one.
+# while `coop build` merely prebuilds (but does not activate) the new one.
 # Package bytes and compiler caches remain available for exact reuse.
-active_state="$fixture_root/compiled/worker-benchmark/.perch-deployment-state.json"
+active_state="$fixture_root/compiled/worker-benchmark/.coop-deployment-state.json"
 rm -f -- "$active_state"
 
 # Build once, then start and stop once to publish the exact current package.
@@ -190,7 +190,7 @@ printf 'perry_runtime_path=%s\n' "$(readlink -f -- "$runtime")"
 printf 'perry_stdlib_path=%s\n' "$(readlink -f -- "$stdlib")"
 printf 'perry_runtime_sha256=%s\n' "$(sha256_file "$runtime")"
 printf 'perry_stdlib_sha256=%s\n' "$(sha256_file "$stdlib")"
-printf 'perch_daemon_sha256=%s\n' "$(sha256_file "$daemon")"
+printf 'coop_daemon_sha256=%s\n' "$(sha256_file "$daemon")"
 printf 'perry_fixture_sha256=%s\n' "$(sha256_file "$perry_fixture/handlers/main.ts")"
 printf 'node_fixture_sha256=%s\n' "$(sha256_file "$repo_root/benchmarks/worker-node/server.mjs")"
 printf 'node_version=%s\n' "$(node --version)"

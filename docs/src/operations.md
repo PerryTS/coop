@@ -2,7 +2,7 @@
 
 ## The CLI
 
-`perch-cli` talks to a daemon's admin API. It defaults to
+`coop-cli` talks to a daemon's admin API. It defaults to
 `http://127.0.0.1:80`; override with the global base-URL flag.
 
 | command | what it does |
@@ -13,7 +13,7 @@
 | `rollback <name>` | roll a deployment back to its previous version |
 | `dev <dir>` | run a deployment locally |
 
-`<target>` is a remote in `root@box:/var/lib/perch/deployments/<name>` form.
+`<target>` is a remote in `root@box:/var/lib/coop/deployments/<name>` form.
 
 ## What a deploy does
 
@@ -46,11 +46,11 @@ rather than loaded. Old packages are retained so rollback has somewhere to go.
 - **Rules and dashboard**: `ops/` contains Prometheus alerting rules, a Grafana
   dashboard, and a smoke-validation script.
 - **Logs**: structured lines from `log.*` in application code, scoped by
-  deployment, tailable via `perch-cli logs`.
+  deployment, tailable via `coop-cli logs`.
 
 ## Resource limits
 
-On Linux, workers run under cgroup limits (`crates/perch-daemon/src/cgroup.rs`).
+On Linux, workers run under cgroup limits (`crates/coop-daemon/src/cgroup.rs`).
 That is the backstop for the things the compiler cannot prevent: memory
 exhaustion and CPU monopolisation. On macOS, development is supported but those
 limits are not.

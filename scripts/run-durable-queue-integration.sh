@@ -5,11 +5,11 @@ set -euo pipefail
 # suite, including a real container stop/start while the daemon remains live.
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-postgres_image="${PERCH_TEST_POSTGRES_IMAGE:-postgres@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3}"
-postgres_port="${PERCH_TEST_POSTGRES_PORT:-15432}"
-container="perch-durable-queue-postgres-$$"
-password="perch-test-password"
-database="perch_test"
+postgres_image="${COOP_TEST_POSTGRES_IMAGE:-postgres@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3}"
+postgres_port="${COOP_TEST_POSTGRES_PORT:-15432}"
+container="coop-durable-queue-postgres-$$"
+password="coop-test-password"
+database="coop_test"
 
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
@@ -21,7 +21,7 @@ command -v docker >/dev/null || {
   exit 1
 }
 [[ "$postgres_port" =~ ^[1-9][0-9]*$ ]] || {
-  echo "PERCH_TEST_POSTGRES_PORT must be a positive integer" >&2
+  echo "COOP_TEST_POSTGRES_PORT must be a positive integer" >&2
   exit 1
 }
 case "$(uname -s)" in
@@ -31,8 +31,8 @@ case "$(uname -s)" in
 esac
 for provider in \
   "$repo_root/.perry-main/target/perry-dev/perry" \
-  "$repo_root/var/perch/lib/libperry_runtime.$library_extension" \
-  "$repo_root/var/perch/lib/libperry_stdlib.$library_extension"; do
+  "$repo_root/var/coop/lib/libperry_runtime.$library_extension" \
+  "$repo_root/var/coop/lib/libperry_stdlib.$library_extension"; do
   if [[ ! -f "$provider" ]]; then
     echo "required durable queue input is missing: $provider" >&2
     exit 1
@@ -72,8 +72,8 @@ fi
 printf 'postgres_image=%s\n' "$postgres_image"
 printf 'postgres_container=%s\n' "$container"
 
-PERCH_TEST_POSTGRES_URL="postgresql://postgres:$password@127.0.0.1:$postgres_port/$database" \
-PERCH_TEST_POSTGRES_CONTAINER="$container" \
-cargo test -p perch-daemon --test durable_queue \
+COOP_TEST_POSTGRES_URL="postgresql://postgres:$password@127.0.0.1:$postgres_port/$database" \
+COOP_TEST_POSTGRES_CONTAINER="$container" \
+cargo test -p coop-daemon --test durable_queue \
   runtime_send_is_tenant_bound_durable_and_consumed \
   -- --ignored --nocapture --test-threads=1

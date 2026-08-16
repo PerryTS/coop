@@ -4,7 +4,7 @@
 // linking perry-runtime as a crate, dlopen-ing a Perry-compiled .dylib, and
 // invoking the tools the plugin's `activate()` registered.
 //
-// If this works, the Perch architecture is unblocked: perch-worker is just
+// If this works, the Coop architecture is unblocked: coop-worker is just
 // a Rust binary that links perry-runtime, dlopens deployment plugins, and
 // dispatches HTTP requests by invoking registered routes/tools.
 //

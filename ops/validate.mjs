@@ -6,11 +6,11 @@ import { dirname, join, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = resolve(here, "..");
-const dashboardPath = join(here, "grafana", "perch-overview.json");
-const rulesPath = join(here, "prometheus", "perch-rules.yml");
+const dashboardPath = join(here, "grafana", "coop-overview.json");
+const rulesPath = join(here, "prometheus", "coop-rules.yml");
 const runbookPath = join(here, "RUNBOOK.md");
 const labelPolicyPath = join(here, "metric-label-policy.json");
-const metricsPath = join(repository, "crates", "perch-daemon", "src", "metrics.rs");
+const metricsPath = join(repository, "crates", "coop-daemon", "src", "metrics.rs");
 
 const [dashboardSource, rulesSource, runbookSource, labelPolicySource, metricsSource] = await Promise.all([
   readFile(dashboardPath, "utf8"),
@@ -43,9 +43,9 @@ if (panelIds.some((id) => !Number.isInteger(id)) || new Set(panelIds).size !== p
   throw new Error("Grafana panel IDs must be unique integers");
 }
 
-const sourceMetrics = new Set(metricsSource.match(/perch_[a-z0-9_]+/g) ?? []);
+const sourceMetrics = new Set(metricsSource.match(/coop_[a-z0-9_]+/g) ?? []);
 const operationSources = `${dashboardSource}\n${rulesSource}`;
-const referencedMetrics = new Set(operationSources.match(/perch_[a-z0-9_]+/g) ?? []);
+const referencedMetrics = new Set(operationSources.match(/coop_[a-z0-9_]+/g) ?? []);
 const unknownMetrics = [];
 
 for (const metric of referencedMetrics) {
@@ -56,7 +56,7 @@ for (const metric of referencedMetrics) {
 }
 
 if (unknownMetrics.length > 0) {
-  throw new Error(`operations files reference metrics not emitted by perch-daemon: ${unknownMetrics.sort().join(", ")}`);
+  throw new Error(`operations files reference metrics not emitted by coop-daemon: ${unknownMetrics.sort().join(", ")}`);
 }
 
 const queryCount = dashboard.panels.reduce(
@@ -89,7 +89,7 @@ const labelMatches = [
   ...metricsSource.matchAll(/\(\s*"([a-z][a-z0-9_]*)"\s*,/g),
 ];
 const emittedLabelKeys = new Set(
-  labelMatches.map((match) => match[1]).filter((label) => !label.startsWith("perch_")),
+  labelMatches.map((match) => match[1]).filter((label) => !label.startsWith("coop_")),
 );
 const documentedLabelKeys = new Set(Object.keys(labelPolicy.labels ?? {}));
 const undocumentedLabels = [...emittedLabelKeys].filter((label) => !documentedLabelKeys.has(label));
@@ -106,5 +106,5 @@ for (const forbidden of labelPolicy.forbidden_label_keys ?? []) {
 }
 
 console.log(
-  `validated ${dashboard.panels.length} Grafana panels, ${queryCount} panel queries, ${alerts.length} alert runbooks, ${emittedLabelKeys.size} bounded label keys, and ${referencedMetrics.size} emitted Perch metrics`,
+  `validated ${dashboard.panels.length} Grafana panels, ${queryCount} panel queries, ${alerts.length} alert runbooks, ${emittedLabelKeys.size} bounded label keys, and ${referencedMetrics.size} emitted Coop metrics`,
 );

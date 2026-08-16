@@ -1,0 +1,13 @@
+name = "test4"
+version = "0.1.0"
+
+# Test 4: heavy compute — fibonacci(30) per request.
+# Stresses Perry's compiled native code performance.
+
+[hosts]
+domains = ["coop-test4.perryts.com"]
+
+[[handlers]]
+file = "handlers/main.ts"
+path = "/"
+method = "GET"

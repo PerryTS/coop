@@ -21,7 +21,7 @@ target/
 .DS_Store
 
 # Local dev data
-.perch-dev/
+.coop-dev/
 var/
 
 # Python / Node artifacts from example deployments
@@ -37,7 +37,7 @@ __pycache__/
 /tmp
 
 # Game sprites/sounds/levels + iOS/tvOS app icons left behind by a Perry UI
-# example run in this directory on 2026-04-26. Nothing in Perch references
+# example run in this directory on 2026-04-26. Nothing in Coop references
 # them; kept on disk, deliberately not committed to a server-host repo.
 /assets/
 

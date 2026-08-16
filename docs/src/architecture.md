@@ -1,11 +1,11 @@
 # Architecture
 
-Perch runs three tiers, split by failure boundary rather than by layer.
+Coop runs three tiers, split by failure boundary rather than by layer.
 
 | tier | process | lifetime | owns |
 |---|---|---|---|
-| **daemon** (`perch-daemon`) | one per box | the box | TLS, routing, deployments, artifacts, admin API, metrics |
-| **worker** (`perch-worker`) | one per deployment | the deployment | the app dylib, its Perry runtime state, cron, queue polling |
+| **daemon** (`coop-daemon`) | one per box | the box | TLS, routing, deployments, artifacts, admin API, metrics |
+| **worker** (`coop-worker`) | one per deployment | the deployment | the app dylib, its Perry runtime state, cron, queue polling |
 | **invocation** | Tokio task | one request | a single HTTP request |
 
 ## Why this split
@@ -28,7 +28,7 @@ deployments do not share one.
 ## Request path
 
 ```
-client ──TLS──▶ perch-daemon ──unix socket──▶ perch-worker ──PCH2──▶ app.dylib
+client ──TLS──▶ coop-daemon ──unix socket──▶ coop-worker ──COOP──▶ app.dylib
                      │                              │
                 router.rs                      plugin_host.rs
              host + path match              dlopen'd, symbol-pinned
@@ -36,16 +36,16 @@ client ──TLS──▶ perch-daemon ──unix socket──▶ perch-worker �
 
 The daemon↔worker protocol is length-prefixed JSON (`u32` big-endian length,
 then the payload) carrying `WorkerRequest`/`WorkerResponse`. The worker↔app
-protocol is `PCH2`, a compact binary frame — see [The host ABI](host-abi.md).
+protocol is `COOP`, a compact binary frame — see [The host ABI](host-abi.md).
 
-Both live in `crates/perch-host-abi` so the daemon, the worker, and any test
+Both live in `crates/coop-host-abi` so the daemon, the worker, and any test
 harness share one vocabulary rather than three drifting copies.
 
 ## Isolation model
 
-Perch treats **the compiler as the primary isolation boundary**, with the
+Coop treats **the compiler as the primary isolation boundary**, with the
 operating system as the backstop. That ordering is unusual and worth stating
-plainly, because it determines what Perch can and cannot promise.
+plainly, because it determines what Coop can and cannot promise.
 
 What the compiler enforces statically:
 
@@ -58,20 +58,20 @@ What the compiler enforces statically:
 What the compiler cannot enforce, and the OS therefore must:
 
 - Memory exhaustion, CPU monopolisation, and runaway allocation. These are
-  bounded per worker by cgroup limits on Linux (`crates/perch-daemon/src/cgroup.rs`).
+  bounded per worker by cgroup limits on Linux (`crates/coop-daemon/src/cgroup.rs`).
 - Bugs in the runtime itself. A memory-safety defect in `perry-runtime` is not
-  contained by anything in Perch; it is contained by the worker being a separate
+  contained by anything in Coop; it is contained by the worker being a separate
   process.
 
-The consequence: **Perch's isolation is only as strong as Perry's soundness plus
+The consequence: **Coop's isolation is only as strong as Perry's soundness plus
 the process boundary.** It is suitable for hosting your own portfolio. Treating
 it as a sandbox for untrusted third-party code would require a threat model that
-Perch does not currently claim — see `perch-spec-v0.md` for the intended
+Coop does not currently claim — see `coop-spec-v0.md` for the intended
 direction.
 
 ## Deployment lifecycle
 
-1. A directory with `perch.toml` is staged into the deployment root.
+1. A directory with `coop.toml` is staged into the deployment root.
 2. The daemon compiles it with Perry into an application dylib, records a
    manifest (Perry commit, provider hashes, target, artifact `sha256`, size), and
    publishes it as an immutable, content-addressed package.

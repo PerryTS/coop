@@ -1,5 +1,5 @@
 [book]
-title = "Perch"
+title = "Coop"
 description = "A single-binary runtime for TypeScript compiled natively by Perry."
 authors = ["Skelpo"]
 language = "en"
@@ -7,8 +7,8 @@ src = "src"
 
 [output.html]
 default-theme = "rust"
-git-repository-url = "https://github.com/PerryTS/perch"
-edit-url-template = "https://github.com/PerryTS/perch/edit/main/docs/{path}"
+git-repository-url = "https://github.com/PerryTS/coop"
+edit-url-template = "https://github.com/PerryTS/coop/edit/main/docs/{path}"
 
 [output.html.fold]
 enable = true

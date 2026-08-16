@@ -1,9 +1,9 @@
 apiVersion: 1
 
 providers:
-  - name: Perch smoke dashboards
+  - name: Coop smoke dashboards
     orgId: 1
-    folder: Perch
+    folder: Coop
     type: file
     disableDeletion: true
     editable: false

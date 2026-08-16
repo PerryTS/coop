@@ -1,20 +1,20 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/perch-host-abi",
-    "crates/perch-worker",
-    "crates/perch-daemon",
-    "crates/perch-cli",
+    "crates/coop-host-abi",
+    "crates/coop-worker",
+    "crates/coop-daemon",
+    "crates/coop-cli",
     "crates/perry-stdlib-shared",
-    # perch-derisk-host is the Phase A.2 experiment that proved plugin roundtrip
+    # coop-derisk-host is the Phase A.2 experiment that proved plugin roundtrip
     # works from Rust. Kept in the workspace so it builds against the same
     # perry-runtime version as the real crates.
     "scripts/derisk/host-rust",
 ]
 default-members = [
-    "crates/perch-daemon",
-    "crates/perch-worker",
-    "crates/perch-cli",
+    "crates/coop-daemon",
+    "crates/coop-worker",
+    "crates/coop-cli",
 ]
 exclude = [".perry-main", ".celld-main", ".perry-examples-main"]
 
@@ -22,7 +22,7 @@ exclude = [".perry-main", ".celld-main", ".perry-examples-main"]
 version = "0.0.1"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/skelpo/perch"
+repository = "https://github.com/skelpo/coop"
 rust-version = "1.75"
 
 [workspace.dependencies]
@@ -32,10 +32,10 @@ perry-runtime = { path = ".perry-main/crates/perry-runtime" }
 perry-stdlib = { path = ".perry-main/crates/perry-stdlib", default-features = false, features = ["full"] }
 perry-ffi = { path = ".perry-main/crates/perry-ffi" }
 
-# perch crates depend on each other by workspace path
-perch-host-abi = { path = "crates/perch-host-abi" }
+# coop crates depend on each other by workspace path
+coop-host-abi = { path = "crates/coop-host-abi" }
 
-# Common deps shared across perch crates
+# Common deps shared across coop crates
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 anyhow = "1"
@@ -54,7 +54,7 @@ codegen-units = 1
 strip = false
 
 # Compiler identity hashing reads a large Perry dev binary. Keep this one
-# primitive optimized even in Perch's debug/test builds.
+# primitive optimized even in Coop's debug/test builds.
 [profile.dev.package.sha2]
 opt-level = 3
 

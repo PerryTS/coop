@@ -1,5 +1,5 @@
 // Minimal host-boundary full-GC correctness witness. Request parsing is
-// intentionally absent: the only semantic step beyond the PCH2 envelope is
+// intentionally absent: the only semantic step beyond the COOP envelope is
 // JSON.stringify of a fresh object followed by Buffer.from.
 export function handle(_frame: Buffer): Buffer {
   const body = Buffer.from(JSON.stringify({

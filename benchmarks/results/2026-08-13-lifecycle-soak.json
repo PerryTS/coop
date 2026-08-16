@@ -450,7 +450,7 @@
           "threadsPerCycle": 0,
           "fdsPerCycle": 0
         },
-        "artifactNamespace": "../../../../var/folders/8v/09vl257j2_v70v2k77gh01n00000gn/T/perch-compile-benchmark-M834ga/compiled/compile-small"
+        "artifactNamespace": "../../../../var/folders/8v/09vl257j2_v70v2k77gh01n00000gn/T/coop-compile-benchmark-M834ga/compiled/compile-small"
       }
     }
   ],

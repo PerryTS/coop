@@ -1,0 +1,17 @@
+name = "test3"
+version = "0.1.0"
+
+# Test 3: JSON parsing + response building. Light work per request.
+
+[hosts]
+domains = ["coop-test3.perryts.com"]
+
+[[handlers]]
+file = "handlers/main.ts"
+path = "/"
+method = "GET"
+
+[[handlers]]
+file = "handlers/main.ts"
+path = "/echo"
+method = "POST"

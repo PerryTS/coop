@@ -7,29 +7,29 @@ set -euo pipefail
 # celld server cgroup. This is not a durability or production-storage claim.
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-celld_root="${PERCH_CELLD_DIR:-$repo_root/.celld-main}"
-celld_binary="${PERCH_CELLD_BINARY:-$celld_root/target/release/celld}"
-fixture="${PERCH_CELLD_FIXTURE:-$repo_root/benchmarks/celld-small}"
+celld_root="${COOP_CELLD_DIR:-$repo_root/.celld-main}"
+celld_binary="${COOP_CELLD_BINARY:-$celld_root/target/release/celld}"
+fixture="${COOP_CELLD_FIXTURE:-$repo_root/benchmarks/celld-small}"
 esbuild="${CELLD_ESBUILD:-$(command -v esbuild || true)}"
-expected_esbuild="${PERCH_CELLD_ESBUILD_VERSION:-0.28.0}"
-trials="${PERCH_BENCH_TRIALS:-3}"
-requests="${PERCH_BENCH_REQUESTS:-20000}"
-concurrency="${PERCH_BENCH_CONCURRENCY:-50}"
-listen_port="${PERCH_CELLD_PORT:-4582}"
-s3_port="${PERCH_CELLD_S3_PORT:-19000}"
-bucket="${PERCH_CELLD_BUCKET:-perch-celld-benchmark}"
-minio_image="${PERCH_CELLD_MINIO_IMAGE:-minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e}"
-mc_image="${PERCH_CELLD_MC_IMAGE:-minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727}"
-access_key="perchbenchmark"
-secret_key="perchbenchmark-secret"
-container="perch-celld-benchmark-$$"
+expected_esbuild="${COOP_CELLD_ESBUILD_VERSION:-0.28.0}"
+trials="${COOP_BENCH_TRIALS:-3}"
+requests="${COOP_BENCH_REQUESTS:-20000}"
+concurrency="${COOP_BENCH_CONCURRENCY:-50}"
+listen_port="${COOP_CELLD_PORT:-4582}"
+s3_port="${COOP_CELLD_S3_PORT:-19000}"
+bucket="${COOP_CELLD_BUCKET:-coop-celld-benchmark}"
+minio_image="${COOP_CELLD_MINIO_IMAGE:-minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e}"
+mc_image="${COOP_CELLD_MC_IMAGE:-minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727}"
+access_key="coopbenchmark"
+secret_key="coopbenchmark-secret"
+container="coop-celld-benchmark-$$"
 temporary_base="${TMPDIR:-/tmp}"
-work_dir="$(mktemp -d "$temporary_base/perch-celld-benchmark.XXXXXX")"
+work_dir="$(mktemp -d "$temporary_base/coop-celld-benchmark.XXXXXX")"
 
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
   case "$work_dir" in
-    "$temporary_base"/perch-celld-benchmark.*)
+    "$temporary_base"/coop-celld-benchmark.*)
       rm -rf "$work_dir"
       ;;
     *)
@@ -66,7 +66,7 @@ for positive in "$trials" "$requests" "$concurrency" "$listen_port" "$s3_port"; 
   }
 done
 [[ "$bucket" =~ ^[a-z0-9][a-z0-9.-]+[a-z0-9]$ ]] || {
-  echo "PERCH_CELLD_BUCKET must be a valid lowercase S3 bucket name" >&2
+  echo "COOP_CELLD_BUCKET must be a valid lowercase S3 bucket name" >&2
   exit 1
 }
 

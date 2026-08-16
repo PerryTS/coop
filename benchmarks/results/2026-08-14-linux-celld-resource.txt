@@ -2,11 +2,11 @@
 ───────────────────────────────────────────────
 Total Upload: 0.56 KiB / gzip: 0.32 KiB
 Your Worker has no bindings.
-Bundled perch-celld-benchmark (0.01 sec)
+Bundled coop-celld-benchmark (0.01 sec)
 2026-08-14T01:45:08.892401Z  INFO object_store::aws::builder: Using Static credential provider
 2026-08-14T01:45:08.908954Z  INFO object_store::aws::builder: Using Static credential provider
-Uploaded perch-celld-benchmark (0.02 sec)
-  s3://perch-celld-benchmark/deploy/perch-celld-benchmark/49f838f8b9ec28bf
+Uploaded coop-celld-benchmark (0.02 sec)
+  s3://coop-celld-benchmark/deploy/coop-celld-benchmark/49f838f8b9ec28bf
 Current Version ID: 49f838f8b9ec28bf
 Nodes load a deployment at startup; restart them to serve this version.
 celld_commit=3f22aedd1ea4d413b93e84afb1ce385f04be84f1

@@ -1,13 +1,13 @@
-// Strict PCH2 Buffer handler for the landing contact form. HTTP metadata and
+// Strict COOP Buffer handler for the landing contact form. HTTP metadata and
 // body bytes stay binary across the host ABI; no JSON/Base64 fallback exists.
 
 type Cursor = { offset: number };
 
 function readBytes(frame: Buffer, cursor: Cursor): Buffer {
-  if (cursor.offset + 4 > frame.length) throw new Error("truncated PCH2 length");
+  if (cursor.offset + 4 > frame.length) throw new Error("truncated COOP length");
   const length = frame.readUInt32BE(cursor.offset);
   cursor.offset += 4;
-  if (cursor.offset + length > frame.length) throw new Error("truncated PCH2 field");
+  if (cursor.offset + length > frame.length) throw new Error("truncated COOP field");
   const value = frame.subarray(cursor.offset, cursor.offset + length);
   cursor.offset += length;
   return value;
@@ -33,21 +33,21 @@ function response(status: number, headerName: string, headerValue: string, body:
 export function handle(frame: Buffer): Buffer {
   if (frame.length < 5 || frame[0] !== 0x50 || frame[1] !== 0x43 ||
       frame[2] !== 0x48 || frame[3] !== 0x32 || frame[4] !== 1) {
-    throw new Error("invalid PCH2 HTTP request");
+    throw new Error("invalid COOP HTTP request");
   }
   const cursor: Cursor = { offset: 5 };
   const method = readBytes(frame, cursor).toString("utf-8");
   const path = readBytes(frame, cursor).toString("utf-8");
   // query, remote address, scheme, and host
   for (let i = 0; i < 4; i++) readBytes(frame, cursor);
-  if (cursor.offset + 4 > frame.length) throw new Error("truncated PCH2 headers");
+  if (cursor.offset + 4 > frame.length) throw new Error("truncated COOP headers");
   const headerCount = frame.readUInt32BE(cursor.offset); cursor.offset += 4;
   for (let i = 0; i < headerCount; i++) {
     readBytes(frame, cursor);
     readBytes(frame, cursor);
   }
   const body = readBytes(frame, cursor);
-  if (cursor.offset !== frame.length) throw new Error("trailing PCH2 bytes");
+  if (cursor.offset !== frame.length) throw new Error("trailing COOP bytes");
   const bodyText = body.toString("utf-8");
 
   // Route: POST /contact

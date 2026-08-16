@@ -1,6 +1,6 @@
 # Perry patch — ungate plugin codegen from needs_ui
 #
-# Discovered while building Perch v0 Phase A.
+# Discovered while building Coop v0 Phase A.
 #
 # Bug: Plugin runtime FFI declarations (perry_plugin_register_*,
 # perry_plugin_set_metadata, etc.) live inside `if self.needs_ui {` in
@@ -11,7 +11,7 @@
 #     perry_plugin_register_tool not declared
 #
 # Perry's own crates/perry/test-files/test_plugin.ts reproduces this. It is
-# load-bearing for Perch because every Perch deployment is a Perry plugin
+# load-bearing for Coop because every Coop deployment is a Perry plugin
 # but never imports perry/ui.
 #
 # `ctx.needs_plugins` already exists in compile.rs (set when "perry/plugin"
@@ -33,7 +33,7 @@ diff --git a/crates/perry-codegen/src/codegen.rs b/crates/perry-codegen/src/code
      /// Whether perry/ui is needed (controls UI/system/plugin function declarations)
      pub(crate) needs_ui: bool,
 +    /// Whether perry/plugin is needed (controls plugin FFI function declarations
-+    /// independently of UI — required for non-UI plugin builds like Perch deployments).
++    /// independently of UI — required for non-UI plugin builds like Coop deployments).
 +    pub(crate) needs_plugins: bool,
      /// Whether dotenv/config was imported (needs auto-init call)
      pub(crate) needs_dotenv_init: bool,
@@ -50,7 +50,7 @@ diff --git a/crates/perry-codegen/src/codegen.rs b/crates/perry-codegen/src/code
      }
 +
 +    /// Set whether perry/plugin is needed (controls plugin FFI function declarations
-+    /// independently of UI — required for non-UI plugin builds like Perch deployments).
++    /// independently of UI — required for non-UI plugin builds like Coop deployments).
 +    pub fn set_needs_plugins(&mut self, needs: bool) {
 +        self.needs_plugins = needs;
 +    }
@@ -67,7 +67,7 @@ diff --git a/crates/perry-codegen/src/runtime_decls.rs b/crates/perry-codegen/sr
 -        if self.needs_ui {
 +        // The UI/system/plugin sections share one big gate. Plugin FFI must be
 +        // declared whenever a TS file imports `perry/plugin`, even when there
-+        // is no UI in the source — Perch deployments are a key example: they
++        // is no UI in the source — Coop deployments are a key example: they
 +        // are Perry plugins but never touch perry/ui. Extending the gate to
 +        // include `needs_plugins` declares a few extra UI extern symbols when
 +        // a plugin-only build runs, but Cranelift only emits references to

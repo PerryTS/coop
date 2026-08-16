@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- A **Perry** checkout. The commit Perch is built against is pinned in
+- A **Perry** checkout. The commit Coop is built against is pinned in
   `perry-main.lock` at the repository root — the `commit` field, not the version
   string. Perry's version does not change on every commit, so it cannot tell you
   whether your checkout matches.
@@ -16,9 +16,9 @@
 ./scripts/build-perry-libraries.sh
 ```
 
-This is the step that makes Perch different from an ordinary Perry build. It
+This is the step that makes Coop different from an ordinary Perry build. It
 temporarily switches `perry-runtime` to `crate-type = ["dylib"]`, builds it with
-the symbol-suppression `stdlib` feature, and links `perch-perry-stdlib-shared`
+the symbol-suppression `stdlib` feature, and links `coop-perry-stdlib-shared`
 against it. The outputs are `.dylib`/`.so` files — **not** `.a` archives, so the
 usual "rebuild the static wrapper crates" advice from Perry's own docs does not
 apply here.
@@ -28,16 +28,16 @@ The script restores the manifest on exit via a trap, including on failure.
 To confirm the build actually produced new artifacts, compare the provider
 `sha256` and the manifest's recorded `perry_commit` — not file timestamps.
 
-## 2. Build Perch
+## 2. Build Coop
 
 ```bash
-cargo build --release -p perch-daemon -p perch-worker -p perch-cli
+cargo build --release -p coop-daemon -p coop-worker -p coop-cli
 ```
 
 ## 3. Run an example
 
 ```bash
-./target/release/perch-cli dev ./examples/landing
+./target/release/coop-cli dev ./examples/landing
 ```
 
 `dev` compiles the deployment and serves it locally. The first compile is slow —
@@ -45,11 +45,11 @@ Perry is doing real code generation — and subsequent ones are cached by conten
 
 ## 4. Write your own
 
-A deployment is a directory containing `perch.toml` and your handlers:
+A deployment is a directory containing `coop.toml` and your handlers:
 
 ```
 myapp/
-├── perch.toml
+├── coop.toml
 └── handlers/
     └── hello.ts
 ```
@@ -69,10 +69,10 @@ method = "GET"
 
 ```ts
 // handlers/hello.ts
-import { PerchRequest, respond } from "@perch/runtime";
+import { CoopRequest, respond } from "@coop/runtime";
 
 export function handle(reqJson: string): string {
-  const req = new PerchRequest(reqJson);
+  const req = new CoopRequest(reqJson);
   return respond(200, { "content-type": "text/plain" }, `hello from ${req.path}`);
 }
 ```
@@ -80,7 +80,7 @@ export function handle(reqJson: string): string {
 Then:
 
 ```bash
-./target/release/perch-cli dev ./myapp
+./target/release/coop-cli dev ./myapp
 curl -H 'Host: myapp.test' http://127.0.0.1:PORT/hello
 ```
 

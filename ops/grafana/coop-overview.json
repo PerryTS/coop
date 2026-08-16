@@ -1,0 +1,310 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Coop fleet health from metrics emitted by coop-daemon.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [{ "editorMode": "code", "expr": "max(coop_deployments_total)", "instant": true, "legendFormat": "deployments", "range": false, "refId": "A" }],
+      "title": "Loaded deployments",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "unit": "reqps", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 5, "x": 4, "y": 0 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [{ "editorMode": "code", "expr": "sum(rate(coop_requests_total{deployment=~\"$deployment\"}[$__rate_interval]))", "legendFormat": "requests", "range": true, "refId": "A" }],
+      "title": "Request rate",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "unit": "percentunit", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.01 }, { "color": "red", "value": 0.05 }] } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 5, "x": 9, "y": 0 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [{ "editorMode": "code", "expr": "sum(rate(coop_requests_total{deployment=~\"$deployment\",status=~\"5..\"}[$__rate_interval])) / clamp_min(sum(rate(coop_requests_total{deployment=~\"$deployment\"}[$__rate_interval])), 0.001)", "legendFormat": "5xx ratio", "range": true, "refId": "A" }],
+      "title": "HTTP 5xx ratio",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.1 }, { "color": "red", "value": 0.5 }] } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 5, "x": 14, "y": 0 },
+      "id": 4,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [
+        { "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(coop_request_duration_seconds_bucket{deployment=~\"$deployment\"}[$__rate_interval])))", "legendFormat": "dispatch p95", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(coop_worker_transport_queue_wait_seconds_bucket{deployment=~\"$deployment\",outcome=\"acquired\"}[$__rate_interval])))", "legendFormat": "worker handoff wait p95", "range": true, "refId": "B" },
+        { "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(coop_worker_transport_round_trip_seconds_bucket{deployment=~\"$deployment\",outcome=\"success\"}[$__rate_interval])))", "legendFormat": "worker round trip p95", "range": true, "refId": "C" }
+      ],
+      "title": "Dispatch and worker transport p95",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 5, "x": 19, "y": 0 },
+      "id": 5,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [
+        { "editorMode": "code", "expr": "sum(increase(coop_invocation_rejections_total{deployment=~\"$deployment\"}[5m]))", "legendFormat": "rejected", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "sum(increase(coop_invocation_timeouts_total{deployment=~\"$deployment\"}[5m]))", "legendFormat": "timed out", "range": true, "refId": "B" }
+      ],
+      "title": "Rejected / timed out (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 4 },
+      "id": 6,
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "coop_executor_queue_depth{deployment=~\"$deployment\"} / clamp_min(coop_executor_queue_capacity{deployment=~\"$deployment\"}, 1)", "legendFormat": "{{deployment}} executor", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "coop_queue_pool_utilization_ratio", "legendFormat": "Postgres queue pool", "range": true, "refId": "B" }
+      ],
+      "title": "Executor and queue-pool utilization",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 4 },
+      "id": 7,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "coop_invocations_in_flight{deployment=~\"$deployment\"}", "legendFormat": "{{deployment}} in flight", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "sum by (deployment) (rate(coop_invocation_rejections_total{deployment=~\"$deployment\"}[$__rate_interval]))", "legendFormat": "{{deployment}} rejected/s", "range": true, "refId": "B" },
+        { "editorMode": "code", "expr": "sum by (deployment) (rate(coop_invocation_timeouts_total{deployment=~\"$deployment\"}[$__rate_interval]))", "legendFormat": "{{deployment}} timeout/s", "range": true, "refId": "C" },
+        { "editorMode": "code", "expr": "coop_worker_transport_backlog{deployment=~\"$deployment\"}", "legendFormat": "{{deployment}} worker backlog", "range": true, "refId": "D" },
+        { "editorMode": "code", "expr": "coop_worker_transport_in_flight{deployment=~\"$deployment\"}", "legendFormat": "{{deployment}} worker transport active", "range": true, "refId": "E" }
+      ],
+      "title": "Admission and deadlines",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 4 },
+      "id": 8,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "sum by (deployment) (increase(coop_worker_restarts_total{deployment=~\"$deployment\"}[$__rate_interval]))", "legendFormat": "{{deployment}} restarts", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "sum by (slot) (increase(coop_worker_shard_failures_total[$__rate_interval]))", "legendFormat": "shard {{slot}} failures", "range": true, "refId": "B" },
+        { "editorMode": "code", "expr": "coop_worker_restart_backoff_seconds{deployment=~\"$deployment\"}", "legendFormat": "{{deployment}} backoff seconds", "range": true, "refId": "C" },
+        { "editorMode": "code", "expr": "sum by (deployment, cause) (increase(coop_worker_transport_poisoned_total{deployment=~\"$deployment\"}[$__rate_interval]))", "legendFormat": "{{deployment}} poison {{cause}}", "range": true, "refId": "D" },
+        { "editorMode": "code", "expr": "sum by (deployment, entrypoint, phase) (increase(coop_worker_transport_cancellations_total{deployment=~\"$deployment\"}[$__rate_interval]))", "legendFormat": "{{deployment}} {{entrypoint}} cancelled {{phase}}", "range": true, "refId": "E" }
+      ],
+      "title": "Worker and shard recovery",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "id": 9,
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "coop_worker_cgroup_memory_current_bytes{deployment=~\"$deployment\"}", "legendFormat": "{{deployment}} cgroup current", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "coop_worker_cgroup_memory_peak_bytes{deployment=~\"$deployment\"}", "legendFormat": "{{deployment}} cgroup peak", "range": true, "refId": "B" },
+        { "editorMode": "code", "expr": "coop_application_arena_live_bytes{deployment=~\"$deployment\"}", "legendFormat": "{{deployment}} arena live", "range": true, "refId": "C" },
+        { "editorMode": "code", "expr": "coop_application_arena_reserved_bytes{deployment=~\"$deployment\"}", "legendFormat": "{{deployment}} arena reserved", "range": true, "refId": "D" }
+      ],
+      "title": "Worker and Perry memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "id": 10,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "coop_worker_cgroup_memory_oom_events{deployment=~\"$deployment\"}", "legendFormat": "{{deployment}} OOM", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "coop_worker_cgroup_memory_oom_kill_events{deployment=~\"$deployment\"}", "legendFormat": "{{deployment}} OOM kill", "range": true, "refId": "B" },
+        { "editorMode": "code", "expr": "coop_worker_cgroup_pids_current{deployment=~\"$deployment\"}", "legendFormat": "{{deployment}} PIDs", "range": true, "refId": "C" }
+      ],
+      "title": "Cgroup pressure and actions",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "id": 11,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "coop_queue_visible_depth{deployment=~\"$deployment\",queue=~\"$queue\"}", "legendFormat": "{{deployment}}/{{queue}} visible", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "coop_queue_active_leases{deployment=~\"$deployment\",queue=~\"$queue\"}", "legendFormat": "{{deployment}}/{{queue}} leased", "range": true, "refId": "B" },
+        { "editorMode": "code", "expr": "coop_queue_dead_letters{deployment=~\"$deployment\",queue=~\"$queue\"}", "legendFormat": "{{deployment}}/{{queue}} DLQ", "range": true, "refId": "C" },
+        { "editorMode": "code", "expr": "coop_queue_pool_connections{state=\"open\"}", "legendFormat": "pool open", "range": true, "refId": "D" },
+        { "editorMode": "code", "expr": "coop_queue_pool_connections{state=\"available\"}", "legendFormat": "pool available", "range": true, "refId": "E" },
+        { "editorMode": "code", "expr": "coop_queue_pool_waiters", "legendFormat": "pool waiters", "range": true, "refId": "F" }
+      ],
+      "title": "Durable queue and pool inventory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "id": 12,
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "coop_queue_oldest_visible_age_seconds{deployment=~\"$deployment\",queue=~\"$queue\"}", "legendFormat": "{{deployment}}/{{queue}} age", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (deployment, queue, le) (rate(coop_queue_delivery_duration_seconds_bucket{deployment=~\"$deployment\",queue=~\"$queue\"}[$__rate_interval])))", "legendFormat": "{{deployment}}/{{queue}} delivery p95", "range": true, "refId": "B" }
+      ],
+      "title": "Queue age and delivery latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "id": 13,
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (deployment, le) (rate(coop_compile_duration_seconds_bucket{deployment=~\"$deployment\"}[$__rate_interval])))", "legendFormat": "{{deployment}} compile p95", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (deployment, le) (rate(coop_compile_queue_wait_seconds_bucket{deployment=~\"$deployment\"}[$__rate_interval])))", "legendFormat": "{{deployment}} queue wait p95", "range": true, "refId": "B" }
+      ],
+      "title": "Compilation latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "id": 14,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "sum by (deployment, outcome) (increase(coop_compiles_total{deployment=~\"$deployment\"}[$__rate_interval]))", "legendFormat": "{{deployment}} compile {{outcome}}", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "sum by (deployment, outcome) (increase(coop_deployment_activations_total{deployment=~\"$deployment\"}[$__rate_interval]))", "legendFormat": "{{deployment}} activation {{outcome}}", "range": true, "refId": "B" },
+        { "editorMode": "code", "expr": "sum by (deployment, outcome) (increase(coop_deployment_rollbacks_total{deployment=~\"$deployment\"}[$__rate_interval]))", "legendFormat": "{{deployment}} rollback {{outcome}}", "range": true, "refId": "C" }
+      ],
+      "title": "Compile and deployment outcomes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "id": 15,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "coop_artifact_retained_bytes{deployment=~\"$deployment\"}", "legendFormat": "{{deployment}} retained bytes", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "coop_artifact_packages{deployment=~\"$deployment\"}", "legendFormat": "{{deployment}} packages", "range": true, "refId": "B" }
+      ],
+      "title": "Artifact inventory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+      "id": 16,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "sum by (deployment, queue, outcome) (rate(coop_queue_deliveries_total{deployment=~\"$deployment\",queue=~\"$queue\"}[$__rate_interval]))", "legendFormat": "{{deployment}}/{{queue}} {{outcome}}", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "sum by (operation) (rate(coop_queue_store_errors_total[$__rate_interval]))", "legendFormat": "store {{operation}} failures", "range": true, "refId": "B" }
+      ],
+      "title": "Queue delivery outcomes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "Bps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 44 },
+      "id": 17,
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "sum by (deployment, entrypoint, direction) (rate(coop_worker_transport_bytes_total{deployment=~\"$deployment\"}[$__rate_interval]))", "legendFormat": "{{deployment}} {{entrypoint}} {{direction}}", "range": true, "refId": "A" }
+      ],
+      "title": "Worker protocol throughput",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["coop", "perry", "server"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Prometheus",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "allValue": ".*",
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "$datasource" },
+        "definition": "label_values(coop_deployment_process_isolated, deployment)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Deployment",
+        "multi": true,
+        "name": "deployment",
+        "options": [],
+        "query": { "query": "label_values(coop_deployment_process_isolated, deployment)", "refId": "CoopDeploymentVariable" },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "$datasource" },
+        "definition": "label_values(coop_queue_depth{deployment=~\"$deployment\"}, queue)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Queue",
+        "multi": true,
+        "name": "queue",
+        "options": [],
+        "query": { "query": "label_values(coop_queue_depth{deployment=~\"$deployment\"}, queue)", "refId": "CoopQueueVariable" },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Coop server overview",
+  "uid": "coop-server-overview",
+  "version": 1,
+  "weekStart": ""
+}

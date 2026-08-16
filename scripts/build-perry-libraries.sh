@@ -7,7 +7,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 perry_root="${PERRY_MAIN_DIR:-$repo_root/.perry-main}"
-output_dir="${PERRY_LIBRARY_DIR:-$repo_root/var/perch/lib}"
+output_dir="${PERRY_LIBRARY_DIR:-$repo_root/var/coop/lib}"
 arena_block_size_bytes="${PERRY_ARENA_BLOCK_SIZE_BYTES:-131072}"
 arena_fresh_block_min_used_bytes=$((arena_block_size_bytes / 4))
 provider_allocator="${PERRY_PROVIDER_ALLOCATOR:-system}"
@@ -87,7 +87,7 @@ compiler_sha256="$(sha256_file "$compiler_build")"
 
 runtime_manifest="$perry_root/crates/perry-runtime/Cargo.toml"
 arena_block_source="$perry_root/crates/perry-runtime/src/arena/block.rs"
-backup_dir="$(mktemp -d "${TMPDIR:-/tmp}/perch-perry-build.XXXXXX")"
+backup_dir="$(mktemp -d "${TMPDIR:-/tmp}/coop-perry-build.XXXXXX")"
 cp "$runtime_manifest" "$backup_dir/perry-runtime.Cargo.toml"
 cp "$arena_block_source" "$backup_dir/arena-block.rs"
 manifest_restored=false
@@ -112,11 +112,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 perl -0pi -e 's/crate-type = \["rlib"\]/crate-type = ["dylib"]/ or die "runtime crate-type marker missing\n"' "$runtime_manifest"
-PERCH_ARENA_BLOCK_SIZE="$arena_block_size_bytes" perl -0pi -e \
-  's/pub\(crate\) const BLOCK_SIZE: usize = 1024 \* 1024;/pub(crate) const BLOCK_SIZE: usize = $ENV{PERCH_ARENA_BLOCK_SIZE};/ or die "arena block-size marker missing\n"' \
+COOP_ARENA_BLOCK_SIZE="$arena_block_size_bytes" perl -0pi -e \
+  's/pub\(crate\) const BLOCK_SIZE: usize = 1024 \* 1024;/pub(crate) const BLOCK_SIZE: usize = $ENV{COOP_ARENA_BLOCK_SIZE};/ or die "arena block-size marker missing\n"' \
   "$arena_block_source"
-PERCH_ARENA_FRESH_BLOCK_MIN_USED_BYTES="$arena_fresh_block_min_used_bytes" perl -0pi -e \
-  's/pub\(crate\) const FRESH_GENERAL_BLOCK_MIN_USED_BYTES: usize = 256 \* 1024;/pub(crate) const FRESH_GENERAL_BLOCK_MIN_USED_BYTES: usize = $ENV{PERCH_ARENA_FRESH_BLOCK_MIN_USED_BYTES};/ or die "fresh-block threshold marker missing\n"' \
+COOP_ARENA_FRESH_BLOCK_MIN_USED_BYTES="$arena_fresh_block_min_used_bytes" perl -0pi -e \
+  's/pub\(crate\) const FRESH_GENERAL_BLOCK_MIN_USED_BYTES: usize = 256 \* 1024;/pub(crate) const FRESH_GENERAL_BLOCK_MIN_USED_BYTES: usize = $ENV{COOP_ARENA_FRESH_BLOCK_MIN_USED_BYTES};/ or die "fresh-block threshold marker missing\n"' \
   "$arena_block_source"
 
 # A runtime provider is never used without the separate stdlib provider. Build
@@ -159,9 +159,9 @@ restore_manifest
 env PERRY_RUNTIME_DYLIB="$runtime_build" \
   "$cargo_linker_env=$repo_root/scripts/perry-stdlib-linker.sh" \
   cargo build --manifest-path "$repo_root/Cargo.toml" \
-  --profile perry-shared -p perch-perry-stdlib-shared
+  --profile perry-shared -p coop-perry-stdlib-shared
 
-stdlib_build="$repo_root/target/perry-shared/libperch_perry_stdlib.$library_extension"
+stdlib_build="$repo_root/target/perry-shared/libcoop_perry_stdlib.$library_extension"
 if [[ ! -f "$stdlib_build" ]]; then
   echo "Perry stdlib build did not produce $stdlib_build" >&2
   exit 1
@@ -180,7 +180,7 @@ fi
 # Deployable providers do not need the local/debug symbol tables retained in
 # Cargo's build artifacts. Keep every dynamic export (including Rust symbols
 # used across the provider boundary), but remove non-exported metadata before
-# these exact bytes are packaged and loaded by Perch.
+# these exact bytes are packaged and loaded by Coop.
 if [[ "$host_os" == "Darwin" ]]; then
   strip -S -x "$runtime_output" "$stdlib_output"
   if ! otool -L "$stdlib_output" | grep -Fq '@rpath/libperry_runtime.dylib'; then

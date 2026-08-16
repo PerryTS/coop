@@ -7,10 +7,10 @@ name: Fast check
 # budgeted at two hours. Nothing in this repository gave a contributor feedback
 # before that finished.
 #
-# perch-host-abi, perch-worker and perch-cli have NO Perry dependency — the
+# coop-host-abi, coop-worker and coop-cli have NO Perry dependency — the
 # worker loads application images with dlopen at runtime rather than linking
 # them — so they build, lint and test with a stock Rust toolchain in minutes.
-# perch-daemon and perry-stdlib-shared do depend on Perry and stay with the
+# coop-daemon and perry-stdlib-shared do depend on Perry and stay with the
 # proof job.
 
 on:
@@ -33,7 +33,7 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
   # Perry-free crates only; see the header.
-  PERRY_FREE_CRATES: "-p perch-host-abi -p perch-worker -p perch-cli"
+  PERRY_FREE_CRATES: "-p coop-host-abi -p coop-worker -p coop-cli"
 
 jobs:
   fast-check:
@@ -83,7 +83,7 @@ jobs:
       # stops at the first failing target and silently skips the remaining
       # worker test binaries, which reads as a pass.
       #
-      # Three perch-worker suites — plugin_roundtrip, provider_integrity and
+      # Three coop-worker suites — plugin_roundtrip, provider_integrity and
       # binary_http_roundtrip — load real application dylibs against built
       # Perry provider images. They cannot run without those artifacts and
       # belong to the shared-runtime proof job, not to a fast gate. They are
@@ -92,10 +92,10 @@ jobs:
       # silently.
       - name: Tests (Perry-free crates, provider suites excluded)
         run: |
-          cargo test -p perch-host-abi --no-fail-fast
-          cargo test -p perch-cli --no-fail-fast
-          cargo test -p perch-worker --lib --no-fail-fast
-          cargo test -p perch-worker --test socket_framing --no-fail-fast
+          cargo test -p coop-host-abi --no-fail-fast
+          cargo test -p coop-cli --no-fail-fast
+          cargo test -p coop-worker --lib --no-fail-fast
+          cargo test -p coop-worker --test socket_framing --no-fail-fast
 
       # Several suites self-skip when their fixtures are absent (no providers,
       # no compiled Perry). A skip is an early `return`, which counts as a pass
@@ -108,21 +108,21 @@ jobs:
           # BOTH `skip:` (12 sites) and `SKIP:` (10 sites), and an anchored
           # lowercase pattern silently saw only half of them — a skip-detector
           # that cannot see skips is the exact failure this step exists to catch.
-          cargo test -p perch-host-abi -p perch-cli -p perch-worker --no-fail-fast -- --nocapture 2>&1 \
+          cargo test -p coop-host-abi -p coop-cli -p coop-worker --no-fail-fast -- --nocapture 2>&1 \
             | grep -iE 'skip:' || echo "no suites self-skipped"
 
       - name: TypeScript runtime package typechecks
         run: |
-          if [ -f packages/perch-runtime/package.json ]; then
-            cd packages/perch-runtime
+          if [ -f packages/coop-runtime/package.json ]; then
+            cd packages/coop-runtime
             npm ci --silent || npm install --silent
             npx --yes tsc --noEmit || {
-              echo "::warning::@perch/runtime does not typecheck under tsc."
+              echo "::warning::@coop/runtime does not typecheck under tsc."
               echo "::warning::Note this is advisory: Perry compiles a subset, so tsc is neither necessary nor sufficient."
               exit 0
             }
           else
-            echo "no packages/perch-runtime/package.json — skipping"
+            echo "no packages/coop-runtime/package.json — skipping"
           fi
 
       - name: Documentation builds

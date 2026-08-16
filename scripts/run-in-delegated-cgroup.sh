@@ -2,13 +2,13 @@
 set -euo pipefail
 
 if [[ $# -eq 0 ]]; then
-  echo "usage: PERCH_DELEGATED_CGROUP_ROOT=/sys/fs/cgroup/... $0 COMMAND [ARG ...]" >&2
+  echo "usage: COOP_DELEGATED_CGROUP_ROOT=/sys/fs/cgroup/... $0 COMMAND [ARG ...]" >&2
   exit 64
 fi
 
-root="${PERCH_DELEGATED_CGROUP_ROOT:-}"
+root="${COOP_DELEGATED_CGROUP_ROOT:-}"
 if [[ -z "$root" || "$root" != /* ]]; then
-  echo "PERCH_DELEGATED_CGROUP_ROOT must be an absolute path" >&2
+  echo "COOP_DELEGATED_CGROUP_ROOT must be an absolute path" >&2
   exit 64
 fi
 
@@ -49,4 +49,4 @@ sudo -E bash -c '
   shift 3
   printf "%s\n" "$$" > "$runner/cgroup.procs"
   exec sudo -E -H -u "$runner_user" -- env "PATH=$runner_path" "$@"
-' perch-cgroup-runner "$runner" "$runner_user" "$runner_path" "$@"
+' coop-cgroup-runner "$runner" "$runner_user" "$runner_path" "$@"

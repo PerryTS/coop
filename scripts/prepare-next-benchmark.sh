@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rebuild the Next.js application fixture through Perch's own compile
+# Rebuild the Next.js application fixture through Coop's own compile
 # pipeline. The daemon owns compilation, identity, boundary validation, and
 # publication, so the artifact this prints is a real immutable package rather
 # than a hand-built library that silently rots against the pinned Perry.
@@ -10,23 +10,23 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-fixture_root="${PERCH_NEXT_FIXTURE_DIR:-$repo_root/target/next-benchmark/perch-run}"
-source_root="${PERCH_NEXT_SOURCE_DIR:-$repo_root/benchmarks/next-small}"
-perry="${PERCH_BENCH_PERRY:-$repo_root/.perry-main/target/perry-dev/perry}"
-provider_verification="${PERCH_BENCH_PROVIDER_VERIFICATION:-full_hash}"
-timeout_seconds="${PERCH_NEXT_PREPARE_TIMEOUT:-1200}"
+fixture_root="${COOP_NEXT_FIXTURE_DIR:-$repo_root/target/next-benchmark/coop-run}"
+source_root="${COOP_NEXT_SOURCE_DIR:-$repo_root/benchmarks/next-small}"
+perry="${COOP_BENCH_PERRY:-$repo_root/.perry-main/target/perry-dev/perry}"
+provider_verification="${COOP_BENCH_PROVIDER_VERIFICATION:-full_hash}"
+timeout_seconds="${COOP_NEXT_PREPARE_TIMEOUT:-1200}"
 
 case "$(uname -s)" in
   Darwin) extension="dylib" ;;
   Linux) extension="so" ;;
   *) echo "unsupported benchmark host: $(uname -s)" >&2; exit 1 ;;
 esac
-runtime="${PERCH_BENCH_RUNTIME:-$repo_root/var/perch/lib/libperry_runtime.$extension}"
-stdlib="${PERCH_BENCH_STDLIB:-$repo_root/var/perch/lib/libperry_stdlib.$extension}"
+runtime="${COOP_BENCH_RUNTIME:-$repo_root/var/coop/lib/libperry_runtime.$extension}"
+stdlib="${COOP_BENCH_STDLIB:-$repo_root/var/coop/lib/libperry_stdlib.$extension}"
 
-daemon="${PERCH_BENCH_DAEMON:-}"
+daemon="${COOP_BENCH_DAEMON:-}"
 if [[ -z "$daemon" ]]; then
-  for candidate in "$repo_root/target/release/perch" "$repo_root/target/debug/perch"; do
+  for candidate in "$repo_root/target/release/coop" "$repo_root/target/debug/coop"; do
     if [[ -x "$candidate" ]]; then
       daemon="$candidate"
       break
@@ -41,7 +41,7 @@ fail() {
 }
 
 if [[ -z "$daemon" || ! -x "$daemon" ]]; then
-  fail "no perch daemon binary" "cargo build --release -p perch-daemon"
+  fail "no coop daemon binary" "cargo build --release -p coop-daemon"
 fi
 if [[ ! -x "$perry" ]]; then
   fail "pinned Perry compiler is missing at $perry" \
@@ -57,8 +57,8 @@ if [[ ! -d "$source_root/node_modules/next" ]]; then
     "(cd $source_root && npm ci)"
 fi
 for required in \
-  "$source_root/perch/perch.toml" \
-  "$source_root/perch/perch-handler.ts" \
+  "$source_root/coop/coop.toml" \
+  "$source_root/coop/coop-handler.ts" \
   "$source_root/app/api/benchmark/route.ts"; do
   if [[ ! -f "$required" ]]; then
     fail "fixture source is missing: $required" "restore it from version control"
@@ -67,7 +67,7 @@ done
 
 deployment="$fixture_root/deployments/next-bench"
 compiled="$fixture_root/compiled"
-# Stage exactly the compiler inputs the daemon requires. Perch refuses
+# Stage exactly the compiler inputs the daemon requires. Coop refuses
 # symlinked source files, so every module is copied; only the dependency tree
 # is linked, which the daemon dereferences into its own private snapshot.
 rm -rf "$deployment"
@@ -79,18 +79,18 @@ mkdir -p \
   "$fixture_root/storage" \
   "$fixture_root/logs" \
   "$fixture_root/acme"
-cp "$source_root/perch/perch.toml" "$deployment/perch.toml"
+cp "$source_root/coop/coop.toml" "$deployment/coop.toml"
 # handlers/main.ts keeps the handler one directory below the deployment root,
 # so its "../app/api/benchmark/route" import resolves exactly as it does in
 # the Next project.
-cp "$source_root/perch/perch-handler.ts" "$deployment/handlers/main.ts"
+cp "$source_root/coop/coop-handler.ts" "$deployment/handlers/main.ts"
 cp "$source_root/app/api/benchmark/route.ts" "$deployment/app/api/benchmark/route.ts"
 ln -sfn "$source_root/node_modules" "$deployment/node_modules"
 
-# The pre-2026-08-14 hand-built fixture lived at this mutable path. Perch no
+# The pre-2026-08-14 hand-built fixture lived at this mutable path. Coop no
 # longer publishes there, and leaving it behind lets a stale library outlive a
 # Perry pin bump.
-rm -f "$compiled/next-bench.$extension" "$compiled/next-bench.perch-lib.json"
+rm -f "$compiled/next-bench.$extension" "$compiled/next-bench.coop-lib.json"
 
 # Discard every previously published package and the activation state that
 # points at it, so this run cannot "succeed" by finding an artifact somebody
@@ -131,7 +131,7 @@ mode = "off"
 EOF
 }
 
-write_runtime_config "$fixture_root/runtime.toml" "${PERCH_NEXT_LISTEN_HTTP:-127.0.0.1:4580}"
+write_runtime_config "$fixture_root/runtime.toml" "${COOP_NEXT_LISTEN_HTTP:-127.0.0.1:4580}"
 build_config="$fixture_root/prepare.toml"
 write_runtime_config "$build_config" "127.0.0.1:0"
 
@@ -158,14 +158,14 @@ deadline=$(( $(date +%s) + timeout_seconds ))
 while true; do
   if grep -Fq 'failed to load deployment during initial scan' "$log_file"; then
     cat "$log_file" >&2
-    echo "Perch could not build the next-bench deployment" >&2
+    echo "Coop could not build the next-bench deployment" >&2
     exit 1
   fi
   if loaded; then
     app="$(find "$compiled/next-bench" -mindepth 2 -maxdepth 2 -type f -name "app.$extension" -print -quit 2>/dev/null || true)"
-    if [[ -z "$app" || ! -f "${app%.$extension}.perch-lib.json" ]]; then
+    if [[ -z "$app" || ! -f "${app%.$extension}.coop-lib.json" ]]; then
       cat "$log_file" >&2
-      echo "Perch loaded next-bench but published no application library" >&2
+      echo "Coop loaded next-bench but published no application library" >&2
       exit 1
     fi
     echo "$app"
@@ -173,7 +173,7 @@ while true; do
   fi
   if ! kill -0 "$daemon_pid" 2>/dev/null; then
     cat "$log_file" >&2
-    echo "Perch exited before publishing the Next benchmark fixture" >&2
+    echo "Coop exited before publishing the Next benchmark fixture" >&2
     exit 1
   fi
   if (( $(date +%s) >= deadline )); then

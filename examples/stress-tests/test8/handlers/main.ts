@@ -4,9 +4,9 @@ export async function handle(reqJson: string): Promise<string> {
   const req = JSON.parse(reqJson);
 
   try {
-    const url = process.env.PERCH_DB_URL;
+    const url = process.env.COOP_DB_URL;
     if (!url || url === "") {
-      throw new Error("PERCH_DB_URL not set");
+      throw new Error("COOP_DB_URL not set");
     }
 
     const conn = await connect(parseConnectionString(url));

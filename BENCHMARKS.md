@@ -1,9 +1,9 @@
-# Perch server-efficiency benchmarks
+# Coop server-efficiency benchmarks
 
 The complete implementation roadmap and success gates are in
 [`PERRY_SERVER_PLAN.md`](PERRY_SERVER_PLAN.md).
 
-These experiments ask whether one Perch process loading Perry application
+These experiments ask whether one Coop process loading Perry application
 libraries can be a more memory-, compute-, and startup-efficient server shape
 than Node.js, and where celld fits in that comparison.
 
@@ -34,7 +34,7 @@ The first implementation pass focused on costs that do not require changing
 Perry's generated application semantics:
 
 - The listener, supervisor, and app executor now retain raw body bytes. Apps
-  use a compact versioned `PCH2` Buffer frame instead of JSON and Base64.
+  use a compact versioned `COOP` Buffer frame instead of JSON and Base64.
 - Perry's final application link is wrapped with a platform export allowlist.
   The Next fixture dropped from 2,690 public symbols and 4.5 MiB to three public
   symbols and 4.2 MiB.
@@ -74,7 +74,7 @@ this macOS machine, but it is not normal server restart or request latency.
 
 The harness now stages one artifact set per scenario, labels trial one
 `fresh`, and reports restart trials separately. It can also forward all daemon
-phase logs with `PERCH_BENCH_TRACE_STARTUP=1`. Perch still uses `RTLD_NOW` and
+phase logs with `COOP_BENCH_TRACE_STARTUP=1`. Coop still uses `RTLD_NOW` and
 completes module initialization before publishing the listener, so no binding
 or initialization cost was moved to the first request.
 
@@ -141,7 +141,7 @@ memory and proportional set size.
 
 | Shape | Listener start | Usable cold | Ready RSS | Warm RSS | Post-2k RSS | Server CPU/request | Requests/s |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Perch + Perry Next API lower bound | 1,656 ms | 1,659 ms | 36.5 MiB | 39.6 MiB | 92.5 MiB | 385 us | 1,118 |
+| Coop + Perry Next API lower bound | 1,656 ms | 1,659 ms | 36.5 MiB | 39.6 MiB | 92.5 MiB | 385 us | 1,118 |
 | Node production Next standalone | 647 ms | 849 ms | 98.6 MiB | 111.9 MiB | 247.3 MiB | 840 us | 452 |
 | celld equivalent Worker | 16 ms | 1,770 ms | 22.4 MiB | 42.2 MiB | 100.5 MiB | 140 us | 8,524 |
 
@@ -149,12 +149,12 @@ The Perry lower bound used about 65% less warm RSS and 54% less sampled server
 CPU than Node, but did less framework work. Node ran the real production Next
 HTTP and App Route stack. Perry constructed a `NextRequest`, invoked the same
 source route, ran `NextResponse.json`, and then emitted the known deterministic
-payload directly through Perch's synchronous ABI. Perry did not run Next's
+payload directly through Coop's synchronous ABI. Perry did not run Next's
 private `AppRouteRouteModule.handle`, AsyncLocalStorage work stores, production
 webpack route loader, query parsing, or response stream extraction. These
 omissions favor Perry, so the row cannot support a full-Next performance claim.
 
-The initial run's most important negative result was startup. Perch loads the
+The initial run's most important negative result was startup. Coop loads the
 separate runtime and stdlib providers and completes application module
 initialization before it publishes the listener. This is operationally honest,
 but the baseline was about twice Node's usable cold start even for the narrowed
@@ -175,7 +175,7 @@ The initial narrowed application artifact was 4.5 MiB; export restriction and
 stripping make the rebuilt artifact about 4.16 MiB. The stripped process-wide
 runtime and stdlib are separate 53.9 MB and 43.9 MB files. `otool -L` on the app
 library lists both provider install names, but their code remains in separate
-files and is loaded only once process-wide. Perch loads the exact provider pair
+files and is loaded only once process-wide. Coop loads the exact provider pair
 globally, validates the pinned Perry version, commit, compiler hash, Rust
 toolchain, and target, then preloads the application library on its dedicated
 Perry thread.
@@ -203,7 +203,7 @@ currently friendly to on-demand application compilation.
 The resident-daemon compilation harness at
 `benchmarks/compilation-economics.mjs` now makes the deploy-time costs
 reproducible. It creates a small Perry application with a real local package,
-keeps one Perch daemon resident, disables filesystem watching so every sample
+keeps one Coop daemon resident, disables filesystem watching so every sample
 has exactly one explicit trigger, validates the response after each activation,
 and measures cold activation, warm no-op reload, one-module change, dependency
 change, static-only change, and rollback. It records process-tree CPU/RSS (and
@@ -235,7 +235,7 @@ three-trial run had to be discarded after a third cold `dlopen` exceeded the
 where wall time remains, but they are not comparison-quality latency numbers.
 The isolated Linux matrix must provide the retained median and PSS result.
 
-Reproduce the controlled matrix after building Perch and the pinned provider
+Reproduce the controlled matrix after building Coop and the pinned provider
 pair:
 
 ```sh
@@ -252,16 +252,16 @@ method, with 20,000 requests at concurrency 50.
 
 | Shape | Startup | Ready RSS | Warm RSS | Post-20k RSS | Requests/s | Server CPU/request |
 |---|---:|---:|---:|---:|---:|---:|
-| Perch, providers only | 274 ms | 14.3 MiB | 14.3 MiB | - | - | - |
-| Perch, 1 app | 574 ms | 17.4 MiB | 22.5 MiB | 34.3 MiB | 56,042 | 27 us |
-| Perch, 100 app dylibs | 30.3 s | 120.2 MiB | 375.5 MiB | 387.9 MiB | 29,034 | 38 us |
-| Perch ABI v2, 100 fresh app images (first activation) | 28.89 s | 59.0 MiB | 130.8 MiB | - | - | - |
-| Perch ABI v2, restart over same 100 eager images | 0.72 s | 59.0 MiB | 130.8 MiB | - | - | - |
+| Coop, providers only | 274 ms | 14.3 MiB | 14.3 MiB | - | - | - |
+| Coop, 1 app | 574 ms | 17.4 MiB | 22.5 MiB | 34.3 MiB | 56,042 | 27 us |
+| Coop, 100 app dylibs | 30.3 s | 120.2 MiB | 375.5 MiB | 387.9 MiB | 29,034 | 38 us |
+| Coop ABI v2, 100 fresh app images (first activation) | 28.89 s | 59.0 MiB | 130.8 MiB | - | - | - |
+| Coop ABI v2, restart over same 100 eager images | 0.72 s | 59.0 MiB | 130.8 MiB | - | - | - |
 | Node, 1 process / 1 app | 63.6 ms | 64.7 MiB | 66.1 MiB | 83.8 MiB | 45,305 | 28 us |
 | Node, 1 process / 100 logical apps | 62.5 ms | 64.5 MiB | 67.9 MiB | 80.0 MiB | 48,230 | 27 us |
 | Node, 100 processes / 100 apps | 1.01 s | 6,481.9 MiB | 6,619.9 MiB | 6,895.5 MiB | 16,753 | 277.5 us |
 
-Perch clearly beats 100 independent Node processes on aggregate RSS, but not a
+Coop clearly beats 100 independent Node processes on aggregate RSS, but not a
 single Node process multiplexing 100 tiny handlers. ABI v2 sharply reduced RSS.
 The corrected harness shows that ordinary restart of 100 eagerly bound images
 is sub-second on this machine; creating and activating 100 brand-new Mach-O
@@ -274,11 +274,11 @@ The retained-image executor lifecycle control now defaults to 250 measured
 load/dispatch/shutdown cycles after five warmups. The 2026-08-13 macOS run
 completed in 1.44 seconds: threads stayed 3→3 (peak 3), open descriptors stayed
 10→10 (peak 10), and RSS moved from 17,024 to 19,840 KiB. Run a different count
-with `PERCH_LIFECYCLE_CYCLES`; the ignored test enforces thread, descriptor, and
+with `COOP_LIFECYCLE_CYCLES`; the ignored test enforces thread, descriptor, and
 retained-RSS ceilings:
 
 ```sh
-cargo test -p perch-worker --test plugin_roundtrip \
+cargo test -p coop-worker --test plugin_roundtrip \
   repeated_load_dispatch_shutdown_reclaims_executor_threads \
   -- --ignored --nocapture
 ```
@@ -294,46 +294,46 @@ npm run build
 ```
 
 Build and validate the shared provider pair with
-`scripts/build-perry-libraries.sh`, then let Perch build the application
+`scripts/build-perry-libraries.sh`, then let Coop build the application
 library itself:
 
 ```sh
-cargo build --release -p perch-daemon
+cargo build --release -p coop-daemon
 scripts/prepare-next-benchmark.sh
 ```
 
-That script stages `benchmarks/next-small/perch/perch.toml`,
-`perch/perch-handler.ts` (as `handlers/main.ts`), and
-`app/api/benchmark/route.ts` into `target/next-benchmark/perch-run`, links the
+That script stages `benchmarks/next-small/coop/coop.toml`,
+`coop/coop-handler.ts` (as `handlers/main.ts`), and
+`app/api/benchmark/route.ts` into `target/next-benchmark/coop-run`, links the
 installed dependency tree, and runs the daemon until it has compiled,
 published, and loaded the `next-bench` package. It prints the published
 `app.dylib` and fails with the daemon log if anything prevents the build, so
 the fixture is never hand-built and a Perry pin bump regenerates it instead of
-rotting. `cargo test -p perch-worker --test binary_http_roundtrip` calls the
+rotting. `cargo test -p coop-worker --test binary_http_roundtrip` calls the
 same script automatically whenever no published package matches the pinned
 providers.
 
-The generated `target/next-benchmark/perch-run/runtime.toml` keeps the
+The generated `target/next-benchmark/coop-run/runtime.toml` keeps the
 benchmark port (127.0.0.1:4580) so the measurement harness can serve this
 fixture unchanged; the build itself uses an ephemeral port through
 `prepare.toml`.
 
-A narrowed standalone library, outside Perch's pipeline, is still useful when
+A narrowed standalone library, outside Coop's pipeline, is still useful when
 bisecting Perry itself:
 
 ```sh
 cd benchmarks/next-small
 ../../.perry-main/target/perry-dev/perry compile \
   --no-auto-optimize --output-type dylib \
-  -o ../../target/next-benchmark/perch-next-route-direct.dylib \
-  perch/perch-handler.ts
+  -o ../../target/next-benchmark/coop-next-route-direct.dylib \
+  coop/coop-handler.ts
 ```
 
 The common measurement harness is
 `benchmarks/server-benchmark.mjs`; it validates runtime, iteration count, and
 checksum on every response, records the machine load with each sample, and
 reports process-tree PSS and private-dirty memory alongside RSS on Linux. Set
-`PERCH_BENCH_CGROUP_ROOT` (or pass `--cgroup-root`) to put the complete server
+`COOP_BENCH_CGROUP_ROOT` (or pass `--cgroup-root`) to put the complete server
 topology into a fresh child cgroup before executable startup and emit ready,
 warm, post-workload, and peak cgroup memory. The harness refuses missing
 `memory`, `cpu`, or `pids` controllers instead of silently weakening the
@@ -350,11 +350,11 @@ state, validates every response, and uses the common Linux PSS/cgroup
 accounting. Build the locked celld binary first, then run:
 
 ```sh
-export PERCH_DELEGATED_CGROUP_ROOT=/sys/fs/cgroup/perch-delegated
-export PERCH_BENCH_CGROUP_ROOT=$PERCH_DELEGATED_CGROUP_ROOT/benchmarks
+export COOP_DELEGATED_CGROUP_ROOT=/sys/fs/cgroup/coop-delegated
+export COOP_BENCH_CGROUP_ROOT=$COOP_DELEGATED_CGROUP_ROOT/benchmarks
 CELLD_ESBUILD=/absolute/path/to/esbuild-0.28.0 \
-PERCH_BENCH_TRIALS=5 \
-PERCH_BENCH_REQUESTS=20000 \
+COOP_BENCH_TRIALS=5 \
+COOP_BENCH_REQUESTS=20000 \
 scripts/run-in-delegated-cgroup.sh \
   scripts/run-celld-mechanism-benchmark.sh
 ```
@@ -370,7 +370,7 @@ shared objects. The Linux output includes proportional set size (PSS) and
 private-dirty memory as well as RSS, so shared mappings are not counted once per
 Node process and application-owned writable pages remain visible. Both values
 come from the same `smaps_rollup` sample. When
-`PERCH_BENCH_CGROUP_ROOT` names a writable delegated cgroup-v2 subtree, each
+`COOP_BENCH_CGROUP_ROOT` names a writable delegated cgroup-v2 subtree, each
 trial creates one child cgroup containing its complete server topology and
 reports ready, warm, post-workload, and peak cgroup memory. The process is
 moved before `exec`, so runtime initialization is accounted for. On the target
@@ -380,7 +380,7 @@ server, build once, retain the exact artifacts across trials, and run the same
 ```sh
 scripts/sync-perry-main.sh
 scripts/build-perry-libraries.sh
-cargo build --release -p perch-daemon -p perch-worker
+cargo build --release -p coop-daemon -p coop-worker
 scripts/prepare-resource-benchmark.sh
 metadata="$(mktemp)"
 scripts/capture-linux-benchmark-environment.sh > "$metadata"
@@ -390,21 +390,21 @@ mv "$metadata" benchmarks/results/linux-benchmark-environment.txt
 # manager or benchmark host. Its parent must enable memory, cpu, and pids.
 # The launcher first places the complete Cargo/harness topology inside that
 # subtree; this is required when the original session cgroup is a sibling.
-export PERCH_DELEGATED_CGROUP_ROOT=/sys/fs/cgroup/perch-delegated
-export PERCH_BENCH_CGROUP_ROOT=$PERCH_DELEGATED_CGROUP_ROOT/benchmarks
+export COOP_DELEGATED_CGROUP_ROOT=/sys/fs/cgroup/coop-delegated
+export COOP_BENCH_CGROUP_ROOT=$COOP_DELEGATED_CGROUP_ROOT/benchmarks
 
-PERCH_BENCH_APP_COUNTS=1,10,100 \
-PERCH_BENCH_TRIALS=5 \
-PERCH_BENCH_REQUESTS=20000 \
+COOP_BENCH_APP_COUNTS=1,10,100 \
+COOP_BENCH_TRIALS=5 \
+COOP_BENCH_REQUESTS=20000 \
 scripts/run-in-delegated-cgroup.sh \
-  cargo test --release -p perch-daemon --test resource_benchmark \
+  cargo test --release -p coop-daemon --test resource_benchmark \
   measure_in_process_startup_and_rss -- --ignored --nocapture
 
-PERCH_BENCH_TRIALS=5 \
-PERCH_BENCH_REQUESTS=20000 \
-PERCH_BENCH_NODE_SCENARIOS=1x1,1x10,1x100,10x1,100x1 \
+COOP_BENCH_TRIALS=5 \
+COOP_BENCH_REQUESTS=20000 \
+COOP_BENCH_NODE_SCENARIOS=1x1,1x10,1x100,10x1,100x1 \
 scripts/run-in-delegated-cgroup.sh \
-  cargo test --release -p perch-daemon --test node_resource_benchmark \
+  cargo test --release -p coop-daemon --test node_resource_benchmark \
   measure_node_process_startup_and_rss -- --ignored --nocapture
 ```
 
@@ -485,7 +485,7 @@ portable policy serially hashed both 58.5 MB and 36.2 MB provider files and
 produced a 565.7 ms usable-cold median. Hashing the independent files in
 parallel preserved byte integrity and reduced a later median to 423.4 ms. The
 production-oriented mode installs a fully hashed package under
-`/opt/perch/providers/<manifest-sha256>` with root ownership, `0555` directory,
+`/opt/coop/providers/<manifest-sha256>` with root ownership, `0555` directory,
 and `0444` files. An unprivileged Perry process then proves every canonical
 ancestor and file is root-owned and not writable before size/identity checks;
 manifest verification took 0.04 ms in the prime log and the provider pair took

@@ -1,18 +1,18 @@
-# Perry application libraries in Perch
+# Perry application libraries in Coop
 
 The complete implementation roadmap and benchmark gates are in
 [`PERRY_SERVER_PLAN.md`](PERRY_SERVER_PLAN.md).
 
-Perch runs Perry-compiled applications as preloaded shared libraries. Runtime
-code is packaged once per Perch process rather than copied into each app:
+Coop runs Perry-compiled applications as preloaded shared libraries. Runtime
+code is packaged once per Coop process rather than copied into each app:
 
 ```text
-perch
+coop
 ├── libperry_runtime.{dylib,so}  one runtime implementation in the process
 ├── libperry_stdlib.{dylib,so}   one fs/http/db/crypto/etc. implementation
 └── compiled/
     ├── app-001.{dylib,so}       application code only
-    ├── app-001.perch-lib.json   exact ABI + entry-point descriptor
+    ├── app-001.coop-lib.json   exact ABI + entry-point descriptor
     └── ...
 ```
 
@@ -29,17 +29,17 @@ machine (1,000 requests, no failures).
 
 ## Build from the pinned Perry main
 
-Perch pins the exact main revision in `perry-main.lock` and keeps an ignored,
+Coop pins the exact main revision in `perry-main.lock` and keeps an ignored,
 detached worktree at `.perry-main`. To refresh and package it:
 
 ```sh
 scripts/sync-perry-main.sh
 scripts/build-perry-libraries.sh
-cargo build -p perch-daemon -p perch-worker
+cargo build -p coop-daemon -p coop-worker
 ```
 
 The packaging script supports native macOS and Linux builds. It produces these
-files in `var/perch/lib/`:
+files in `var/coop/lib/`:
 
 - `libperry_runtime.dylib` and `libperry_stdlib.dylib` on macOS;
 - `libperry_runtime.so` and `libperry_stdlib.so` on Linux;
@@ -60,16 +60,16 @@ content namespace:
 
 ```sh
 provider_dir="$(sudo scripts/install-perry-provider-package.sh \
-  var/perch/lib /opt/perch/providers)"
+  var/coop/lib /opt/coop/providers)"
 ```
 
 The installer validates the source sizes and SHA-256 digests, stages and
 revalidates root-owned files, and atomically publishes
-`/opt/perch/providers/<manifest-sha256>`. `root_owned_immutable` then replaces
-the repeated large-file read with a fail-closed OS trust check: Perch must run
+`/opt/coop/providers/<manifest-sha256>`. `root_owned_immutable` then replaces
+the repeated large-file read with a fail-closed OS trust check: Coop must run
 unprivileged, and the canonical package directory, every ancestor, manifest,
 runtime, and stdlib must be root-owned and not writable by the service, group,
-others, or an ACL. Writable development paths and root-running Perch are
+others, or an ACL. Writable development paths and root-running Coop are
 rejected. `full_hash` remains the default.
 
 Provider packaging defaults Perry's arena block size to 128 KiB and records
@@ -82,7 +82,7 @@ per-thread resident memory for Perry's faster allocation path. The selected
 allocator is part of the provider manifest.
 
 The manifest pins the Perry version, exact git commit, compiler SHA-256, Rust
-toolchain, target, and filenames. Perch loads runtime first and stdlib second
+toolchain, target, and filenames. Coop loads runtime first and stdlib second
 with global symbol visibility, verifies that stdlib is bound to that exact
 runtime image, then allows application libraries to load. The daemon also
 hashes the configured compiler once and refuses to compile if it is not the
@@ -113,7 +113,7 @@ command_queue_capacity = 256
 
 [execution.cgroup]
 mode = "auto" # "required" fails worker/shard activation closed
-root = "/sys/fs/cgroup/perch"
+root = "/sys/fs/cgroup/coop"
 
 [execution.shards]
 count = 4
@@ -124,8 +124,8 @@ max_pids = 256
 
 [paths]
 perry_binary = ".perry-main/target/perry-dev/perry"
-perry_runtime_library = "var/perch/lib/libperry_runtime.dylib"
-perry_stdlib_library = "var/perch/lib/libperry_stdlib.dylib"
+perry_runtime_library = "var/coop/lib/libperry_runtime.dylib"
+perry_stdlib_library = "var/coop/lib/libperry_stdlib.dylib"
 ```
 
 The example uses macOS filenames; Linux uses the corresponding `.so` files.
@@ -133,7 +133,7 @@ For `root_owned_immutable`, both library paths must point inside the exact
 directory printed by the installer. Dedicated and sharded workers receive the
 same policy from the daemon.
 
-Each deployment can bound admission and ABI allocations in `perch.toml`:
+Each deployment can bound admission and ABI allocations in `coop.toml`:
 
 ```toml
 [isolation]
@@ -165,7 +165,7 @@ daemon it lands on:
 - `class = "trusted"` runs the application on its thread-affine executor in
   the daemon address space. It provides the density and direct-call path but
   cannot contain a native crash or hard-kill synchronous native work.
-- `class = "dedicated"` gives the deployment one supervised `perch-worker`
+- `class = "dedicated"` gives the deployment one supervised `coop-worker`
   process. A crash or hard deadline can remove that process without removing
   the daemon or other dedicated deployments.
 - `class = "sharded"` gives the deployment an independently addressed runtime
@@ -189,7 +189,7 @@ HTTP, cron, and queue work share the per-deployment admission semaphore. The
 effective concurrency is capped by the executor command-channel capacity, so a
 configuration cannot advertise more queued work than the host can retain.
 Overloaded HTTP calls receive `503`, `Retry-After: 1`, and
-`x-perch-error: overloaded`. Request body/header violations receive `413`/`431`,
+`x-coop-error: overloaded`. Request body/header violations receive `413`/`431`,
 oversized application responses receive `502`, and wall deadlines receive
 `504`. Every complete application frame remains subject to the 16 MiB ABI
 ceiling even when a component limit is larger.
@@ -206,17 +206,17 @@ Shard load control is idempotent only when both the runtime ID and complete
 deployment specification match. A lost response is retried with that exact
 identity under a bounded control timeout. Reusing an ID for different bytes,
 limits, module identity, context, or queue policy fails closed. If retries still
-cannot distinguish “not loaded” from “loaded but response lost,” Perch poisons
+cannot distinguish “not loaded” from “loaded but response lost,” Coop poisons
 and terminates the complete shard failure domain rather than releasing capacity
 while leaving an unreachable executor resident. A definitive application
 rejection does not disturb healthy siblings.
 
-When `[activation].path` is present, Perch dispatches one to 64 sequential
+When `[activation].path` is present, Coop dispatches one to 64 sequential
 requests directly against the initialized replacement before writing active
 artifact state or changing routing. The ordinary deployment deadline and byte
 limits apply. Every response must match `expected_status` and the optional body
 digest. Failure drains the unpublished generation and leaves the current one
-untouched. `GET /_perch/admin/deployments/<name>/health` exposes the last live
+untouched. `GET /_coop/admin/deployments/<name>/health` exposes the last live
 generation's outcome, count, status, duration, and completion time; activation
 counters/histograms expose success, failure, and exact no-op reloads. Restart
 and rollback rerun the packaged generation's exact probe. An exact package
@@ -239,7 +239,7 @@ capacity; once every configured slot is full, activation fails before
 publication.
 
 On Linux, dedicated and sharded generations use cgroup v2 when the configured
-hierarchy is delegated. Perch creates a unique cgroup before spawn and writes
+hierarchy is delegated. Coop creates a unique cgroup before spawn and writes
 `memory.max`, `memory.swap.max = 0`, `memory.oom.group = 1`, `cpu.max`, and
 `pids.max`. The worker moves itself through that generation's `cgroup.procs`
 before it loads either Perry provider or application code. Dedicated limits
@@ -261,9 +261,9 @@ binding explicitly.
 
 ## Compatibility and hot reload
 
-Every compile writes `<app>.perch-lib.json` with:
+Every compile writes `<app>.coop-lib.json` with:
 
-- Perch app ABI version;
+- Coop app ABI version;
 - exact Perry compiler/runtime version, commit, and compiler SHA-256;
 - exact dereferenced dependency-tree and semantic compiler-invocation digests;
 - target architecture and OS;
@@ -272,7 +272,7 @@ Every compile writes `<app>.perch-lib.json` with:
 - application byte length, SHA-256, and deployment-time boundary-verification
   status.
 
-Perch rejects incompatible or incomplete libraries. During a reload, it fully
+Coop rejects incompatible or incomplete libraries. During a reload, it fully
 warms the replacement before swapping it into the router, then drains the old
 thread. Existing requests finish without seeing loader latency.
 
@@ -282,14 +282,14 @@ platform loader can use a two-level namespace, but they may not define any
 provider-owned symbol or embed provider code.
 
 The compiler's final link exports only `perry_module_init` and stable
-Perch-owned aliases: `perch_app_http_v2`, `perch_app_cron_<index>_v2`, and
-`perch_app_queue_<index>_v2` as required by the manifest. Perry's generated,
+Coop-owned aliases: `coop_app_http_v2`, `coop_app_cron_<index>_v2`, and
+`coop_app_queue_<index>_v2` as required by the manifest. Perry's generated,
 source-path-derived wrapper names are link-time implementation details and are
 never the public app ABI. The link also enables dead stripping, removes
 local/debug symbol tables from deployable images, and binds undefined Perry
 imports directly to the separately packaged providers. Provider packaging
 applies the same symbol-table stripping while retaining every dynamic export
-needed across the runtime/stdlib boundary. Perch runs the
+needed across the runtime/stdlib boundary. Coop runs the
 dependency/export boundary audit once at deployment time, then uses the
 recorded size and SHA-256 to prove that later loads see those exact bytes. This
 removes `otool`/`nm` and thousands of symbol comparisons from startup without
@@ -299,12 +299,12 @@ App compilation always uses `--no-codegen --no-auto-optimize --march <pinned>`.
 Perry already omits runtime/stdlib archives from a dylib link; the second flag
 also prevents per-app specialized providers that would be discarded. Codegen
 hooks must run upstream and their committed outputs become snapshot inputs.
-Perch clears the ambient build environment, passes an audited allowlist, and
+Coop clears the ambient build environment, passes an audited allowlist, and
 hashes its semantic argv, compiler/linker-wrapper/tool bytes, provider bytes,
 target, CPU baseline, and propagated environment into the package identity.
 
 Every HTTP app must export `handle(request: Buffer): Buffer` (or the async
-`Promise<Buffer>` form). The versioned `PCH2` frame carries
+`Promise<Buffer>` form). The versioned `COOP` frame carries
 method, URL fields, duplicate headers, and raw body bytes; the response carries
 status, duplicate headers, and raw body bytes. There is no JSON/Base64 app ABI
 or legacy fallback. ABI v2 also defines strict cron and queue frames. Cron has
@@ -367,7 +367,7 @@ present in the union of runtime and stdlib exports. The daemon integration
 tests exercise compilation, manifest generation, integrity validation, preload,
 strict binary dispatch, and HTTP routing against this layout.
 
-Automatically compiled applications are immutable packages. Perch computes a
+Automatically compiled applications are immutable packages. Coop computes a
 source identity from sorted relative source/config/lock paths, exact bytes, the
 serialized deployment configuration, and the complete installed dependency
 tree. Dependency symlinks are dereferenced into the private snapshot, so linked
@@ -375,12 +375,12 @@ workspace package bytes cannot change underneath the compiler. Perry's own
 machine-local cache is the sole excluded subtree; file/byte limits bound both
 hashing and copying. Compilation, export validation, boundary audit, library
 hashing, and manifest creation all occur under
-`compiled/.staging/`. After syncing the library, manifest, and directory, Perch
+`compiled/.staging/`. After syncing the library, manifest, and directory, Coop
 publishes both files together with one same-filesystem rename to:
 
 ```text
 compiled/<deployment>/<package-sha256>/app.{dylib,so}
-compiled/<deployment>/<package-sha256>/app.perch-lib.json
+compiled/<deployment>/<package-sha256>/app.coop-lib.json
 ```
 
 The package digest covers the complete ABI manifest, which contains the source
@@ -391,7 +391,7 @@ already published immutable package, but there is no legacy mutable-library
 fallback and the compiler never writes a mutable deployment path.
 
 When only configuration or static bytes change and the packaged application
-image has the same verified SHA-256, Perch probes and reuses the already
+image has the same verified SHA-256, Coop probes and reuses the already
 initialized healthy runtime instead of loading a second native image. It still
 records the new immutable package, swaps routing/admission/configuration
 atomically, stops the old cron/queue generation, and activates the new
@@ -405,15 +405,15 @@ second app load, bounded packages, and stable thread/descriptor counts. It is
 not yet a memory pass: the pinned Perry runtime retains one TENURED host
 request Buffer and one response Buffer per invocation (152 live arena
 bytes/request in a 50,000-request probe). Minor GC cannot reclaim these old-
-generation objects, and forcing a full GC from Perch corrupted the next ABI
-response, so Perch does not ship that workaround.
+generation objects, and forcing a full GC from Coop corrupted the next ABI
+response, so Coop does not ship that workaround.
 `host_buffer_churn_is_reclaimed_by_perry` is the ignored promotion gate that a
 new Perry candidate must make green.
 
 Perry's content-keyed object cache lives under
 `compiled/.perry-cache/<compiler-contract>/`, shared safely by deployments with
-the same exact compiler contract. Perch records Perry object hit/miss counts,
-Perch package and compiled-image reuse, and identity, snapshot, compiler,
+the same exact compiler contract. Coop records Perry object hit/miss counts,
+Coop package and compiled-image reuse, and identity, snapshot, compiler,
 validation, package, and publication phase durations. Perry's dylib report does
 not currently expose a distinct link-cache result.
 
@@ -422,7 +422,7 @@ threads, then dispatches to all of them concurrently:
 
 ```sh
 scripts/prepare-resource-benchmark.sh
-cargo test -p perch-worker --test plugin_roundtrip \
+cargo test -p coop-worker --test plugin_roundtrip \
   hundred_preloaded_apps_dispatch -- --ignored --nocapture
 ```
 
@@ -431,7 +431,7 @@ Mach-O images took 28.89 seconds, while clean daemon restarts over those same
 100 eagerly bound and initialized artifacts took 724 and 620 ms. Invoking every
 app once took about 89-109 ms and resulted in roughly 131 MiB RSS. The large
 first-activation number is deployment work rather than deferred request work;
-Perch does not use `RTLD_LAZY`. This validates the hosting shape with a small
+Coop does not use `RTLD_LAZY`. This validates the hosting shape with a small
 Perry app; the size and compatibility of a real Next.js build remain
 Perry/compiler concerns rather than a promise of this loader.
 

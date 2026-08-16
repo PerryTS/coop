@@ -1,6 +1,6 @@
 // Test 9: regex-heavy — extracts emails + URLs from text.
 export function handle(reqJson: string): string {
-  const text = "Contact alice@example.com or bob@test.io. Visit https://perch.perryts.com or https://example.org for more. Also email charlie@foo.bar and david@spam.dev today!";
+  const text = "Contact alice@example.com or bob@test.io. Visit https://coop.perryts.com or https://example.org for more. Also email charlie@foo.bar and david@spam.dev today!";
 
   const emailRe = /[a-z0-9]+@[a-z0-9.]+/g;
   const urlRe = /https?:\/\/[a-z0-9.-]+/g;

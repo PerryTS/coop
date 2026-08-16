@@ -1,6 +1,6 @@
 # Perry application-library server plan
 
-This is the canonical, living plan for the Perry/Perch multi-application
+This is the canonical, living plan for the Perry/Coop multi-application
 server. It includes the target architecture, what is implemented, every known
 remaining workstream, the benchmark contract, production gates, and the work
 that can proceed independently of Next.js compatibility.
@@ -9,7 +9,7 @@ that can proceed independently of Next.js compatibility.
 disagree with this one, the discrepancy must be resolved rather than silently
 choosing the more favorable claim.
 
-**Last reviewed:** 2026-08-14 against Perch's current working tree, pinned
+**Last reviewed:** 2026-08-14 against Coop's current working tree, pinned
 Perry `0.5.1503` (`564c563…`), and the clean Perry `main` candidate
 `3381e1b…`.
 
@@ -25,7 +25,7 @@ Status language is deliberately strict:
   efficiency, reliability, and reproducibility gates all pass under the chosen
   isolation topology.
 
-Every completed item must leave reproducible evidence tied to exact Perch,
+Every completed item must leave reproducible evidence tied to exact Coop,
 Perry, provider, application, configuration, toolchain, target, and benchmark
 identities. A benchmark improvement may not weaken response validation,
 readiness semantics, artifact integrity, or isolation without being reported
@@ -33,7 +33,7 @@ as a different server shape.
 
 ## Executive position
 
-The intended end state is one Perch service hosting many separately deployed
+The intended end state is one Coop service hosting many separately deployed
 Perry application libraries while sharing one Perry runtime and one stdlib
 image. Applications are compiled and validated before activation, kept warm,
 and invoked directly through a strict binary ABI. This can remove process-per-
@@ -92,13 +92,13 @@ old-generation Buffer bytes per invocation and does not trigger an automatic
 full collection. A host-forced full collection is not a safe workaround: in
 the pinned runtime it can corrupt the next ABI response. The fix belongs in
 Perry's Buffer rooting/collection or GC pacing contract and has an ignored,
-currently failing Perch promotion test. This is independent of Next.js
+currently failing Coop promotion test. This is independent of Next.js
 compatibility and must be green before the density verdict can be production-
 worthy.
 
 ## Objective
 
-Build a server in which one Perch executable hosts many independently compiled
+Build a server in which one Coop executable hosts many independently compiled
 Perry applications with lower startup time, memory consumption, and compute
 cost than the honest Node.js and celld alternatives.
 
@@ -144,7 +144,7 @@ The plan does not promise:
 - **Fresh deployment activation:** activation of newly produced file identities.
   This includes platform loader work and is not the same as restart.
 - **Restart:** activation over the same retained immutable provider and app
-  files after starting a new Perch process.
+  files after starting a new Coop process.
 - **Listener-ready:** every advertised deployment is already invokable; no
   application activation is deferred to the first request.
 - **Usable cold start:** process start through the first validated response.
@@ -173,7 +173,7 @@ The plan does not promise:
 ## Target architecture
 
 ```text
-Perch server process
+Coop server process
 ├── libperry_runtime.{dylib,so}   loaded once, RTLD_NOW | RTLD_GLOBAL
 ├── libperry_stdlib.{dylib,so}    loaded once, bound to that runtime
 ├── router and lifecycle supervisor
@@ -185,9 +185,9 @@ Perch server process
 Request
   → router lookup
   → executor handoff
-  → PCH2 Buffer call
+  → COOP Buffer call
   → native application execution
-  → PCH2 Buffer response
+  → COOP Buffer response
 ```
 
 Perry runtime state is currently thread-local, so each loaded application is
@@ -201,10 +201,10 @@ model is one of the principal optimization workstreams.
 accepted connection
   → immutable router snapshot lookup
   → per-deployment admission and deadline
-  → encode strict PCH2 request
+  → encode strict COOP request
   → bounded executor handoff
   → already initialized application call
-  → decode and validate PCH2 response
+  → decode and validate COOP response
   → record bounded-cardinality metrics
   → send response
 ```
@@ -263,18 +263,18 @@ providers/
 
 compiled/
   <deployment>/
-    .perch-deployment-state.json
+    .coop-deployment-state.json
     <package-sha256>/
       app.{dylib,so}
-      app.perch-lib.json
-      deployment.perch.json
-      static.perch-manifest.json
-      .perch-static/
+      app.coop-lib.json
+      deployment.coop.json
+      static.coop-manifest.json
+      .coop-static/
         <configured-root-index>/...
 ```
 
 The provider location above is the production package target; development
-currently uses the configured `var/perch/lib` paths. Automatic application
+currently uses the configured `var/coop/lib` paths. Automatic application
 compilation already publishes into the content-addressed application layout.
 Source-less deployments may restore only a previously published, verified,
 content-addressed package. The mutable `compiled/<name>.<ext>` legacy fallback
@@ -287,8 +287,8 @@ is removed.
 | Perry revision | Reproducible baseline pinned; latest-main promotion pending | `perry-main.lock` and `.perry-main` are clean at `0.5.1503` / `564c563…`. The clean candidate worktree matches current `main` at `3381e1b…`, 43 commits later, and contains the #8035, #8039, and #8041 GC changes. Its Buffer allocation path is unchanged, so promotion still requires the host-Buffer churn and forced-GC/root-safety gates rather than assuming `main` fixes it. |
 | Perry Linux `Buffer.from(array)` compatibility | Defect isolated; server fixtures use portable construction | On the pinned Linux compiler, `Buffer.from([numeric literals])` returns an empty Buffer while `Buffer.alloc` plus indexed byte writes works. This initially looked like cron/queue dispatch corruption; retained wrapper disassembly and direct plugin calls proved the server routes and stable aliases are correct. Perry needs a focused source regression and fix before idiomatic binary applications can rely on this constructor. |
 | Separate runtime and stdlib | Done on macOS and Linux | Both providers are independently packaged and loaded in order. Native Linux artifacts are 58,524,728-byte runtime and 36,188,992-byte stdlib files with retained SHA-256 identities. |
-| App-only library boundary | Done for current fixtures on macOS and Linux | Apps import both providers, expose only module initialization plus stable Perch-owned HTTP/cron/queue aliases, and are boundary-audited. Linux ELF `NEEDED` and exact-export audits pass. Generated Perry path-derived wrapper names are not public ABI. |
-| Strict HTTP ABI v2 | Done | Raw request/response bytes use `PCH2`; legacy fallback is removed. |
+| App-only library boundary | Done for current fixtures on macOS and Linux | Apps import both providers, expose only module initialization plus stable Coop-owned HTTP/cron/queue aliases, and are boundary-audited. Linux ELF `NEEDED` and exact-export audits pass. Generated Perry path-derived wrapper names are not public ABI. |
+| Strict HTTP ABI v2 | Done | Raw request/response bytes use `COOP`; legacy fallback is removed. |
 | Eager activation | Done | Listener/router publication follows provider load, app load, module initialization, and the packaged bounded HTTP warmup/health contract. Failed probes drain the unpublished generation and preserve the current one; exact healthy reloads are no-ops; live outcome/status/duration is queryable and metricized. |
 | Artifact integrity | Done for apps, providers, configuration, and static assets | App, runtime, stdlib, exact deployment configuration, and immutable static snapshots are tied to size/SHA-256 manifests and fail closed before loading. Static symlinks, special files, file-count overflow, and byte-limit overflow are rejected. |
 | Hot replacement | Atomic routing and live-runtime reuse proven; memory gate failing | Byte-identical application images reuse the healthy initialized runtime after a fresh activation probe, while configuration, immutable package identity, routing, admission, and background generation still change atomically. A 250-cycle full-daemon soak achieved 250/250 runtime reuses and 21,740 concurrent validated requests with zero errors, no compiler, no second native app load, three retained packages, threads 13→13, and FDs 13→14. RSS grew 8,464 KiB with a 34.2-KiB/cycle latter-half slope; arena telemetry attributes the retained trend to Perry host-ABI Buffers, so the soak is correctness-green but memory-red. |
@@ -299,12 +299,12 @@ is removed.
 | Full Next.js execution | In progress | Focused #8035 and #8039 fixes have landed upstream; #8034's full production provider-hosted oracle is still red, and #8036–#8038 plus tracker #8040 remain open. Compatibility workers own these gates. |
 | Executor density controls | Implemented | Stack size and bounded command-queue capacity are explicit configuration; overload rejects rather than growing memory without bound. |
 | Perry memory attribution | Implemented; defect isolated | Per-application live/reserved arena statistics are exposed through authenticated admin status and Prometheus gauges. A 100-cycle replacement soak grew live arena bytes from 2,640 to 2,242,048 and reserved bytes from 262,144 to 2,490,368; a separate 50,000-request gate proves linear 152-byte-per-request old-generation Buffer retention. |
-| Cron and queue binary ABI | Functional lifecycle including shard queue is locally proven; soak pending | Strict `PCH2` frames, stable exact exports, JSON and raw-byte host-owned enqueue, explicit UTC cron overlap/lateness/no-restart-catch-up policy, Postgres leasing/retry/DLQ, lifecycle consumers, metrics, and authenticated DLQ operations are implemented. Real scheduled cron crosses the shard runtime-ID protocol. A disposable-Postgres real-daemon run passes trusted and dedicated modes across daemon restart, hot replacement, rollback, a killed in-flight delivery, forced database-connection replacement, then proves provider-callback enqueue and exact raw-byte acknowledgement through a real shard runtime ID. |
+| Cron and queue binary ABI | Functional lifecycle including shard queue is locally proven; soak pending | Strict `COOP` frames, stable exact exports, JSON and raw-byte host-owned enqueue, explicit UTC cron overlap/lateness/no-restart-catch-up policy, Postgres leasing/retry/DLQ, lifecycle consumers, metrics, and authenticated DLQ operations are implemented. Real scheduled cron crosses the shard runtime-ID protocol. A disposable-Postgres real-daemon run passes trusted and dedicated modes across daemon restart, hot replacement, rollback, a killed in-flight delivery, forced database-connection replacement, then proves provider-callback enqueue and exact raw-byte acknowledgement through a real shard runtime ID. |
 | Per-deployment admission/deadlines | Core enforcement implemented | HTTP, cron, and queue share one non-waiting deployment semaphore capped by executor capacity. Request/header/response/queue/ABI byte limits fail before executor work where possible; HTTP maps overload, size, and deadline failures to stable 503/413/431/502/504 responses. Timed-out native work retains its permit. Worker transport is poisoned and its unique generation replaced after an uncertain timeout/framing failure. Dedicated workers have cgroup memory/CPU/PID enforcement; hard in-process preemption remains impossible. |
-| HTTP hot path | Lock and allocation reductions implemented; controlled production-host A/B pending | Router reads use an atomic immutable snapshot, routing borrows request metadata, immutable route limits avoid a second live-state read, and admission/request metric handles are cached. A phase trace attributes roughly 1.4 us to PCH2 encode/decode and roughly 42 us to the Perry invocation in the tiny Worker shape. Shared-VM reruns were too load-sensitive to claim a CPU win, so the retained five-trial matrix remains the verdict baseline. |
+| HTTP hot path | Lock and allocation reductions implemented; controlled production-host A/B pending | Router reads use an atomic immutable snapshot, routing borrows request metadata, immutable route limits avoid a second live-state read, and admission/request metric handles are cached. A phase trace attributes roughly 1.4 us to COOP encode/decode and roughly 42 us to the Perry invocation in the tiny Worker shape. Shared-VM reruns were too load-sensitive to claim a CPU win, so the retained five-trial matrix remains the verdict baseline. |
 | Artifact rollback and GC | Core implementation, daemon integration, durable crash-image proof, and full local deployment-boundary SIGKILL matrix complete | Packages include exact configuration and static bytes; activation state records active and previous identities atomically; authenticated rollback re-verifies and eagerly activates the selected package; restart restores that exact selection without recompiling mutable source; count/age retention, live pins, symlink-safe collection, trash staging, startup reconciliation, status, and metrics are implemented. Child-process tests cover compiler start, validated staging, successful activation probe before state publication, package publication, synced state temporary file, state rename, and trash rename. Real SIGKILL proves startup selects an old or new complete generation and reconciles only unreachable data. Native-Linux repetition and the long daemon collection/replacement soak remain. |
-| Compilation controls | Deterministic bounded path and daemon-crash containment implemented; controlled evidence in progress | Compilation has independent bounded concurrency, queue-time metrics, wall/RSS budgets, bounded diagnostics, exact local and dereferenced dependency snapshots, mutation detection, explicit compiler argv/environment/provider identity, a stable Perch-owned Perry object cache, package/compiled-image reuse telemetry, phase/failure metrics, and `perch build`. Timeout/RSS enforcement kills the private process group, and a parent-watching guard also kills that group when daemon SIGKILL bypasses destructors. The real compiler path and an OS parent-kill regression pass. Controlled cold/no-op/incremental/static/activation/rollback trials are reproducible; Linux and long cache/lifecycle soak remain. |
-| Durable queues and database schema | Trusted/dedicated/sharded functional gate complete; soak pending | Perch owns migrations, deployment identity, transactional leases, retry/backoff, DLQ, consumer generations, admission, policy, metrics, authenticated metadata-only list/replay/purge operations, and JSON/raw-byte producer APIs. The real Postgres store and daemon suites prove trusted/dedicated/sharded execution, restart, replacement, rollback leadership, retries, explicit and exhausted DLQ, byte preservation, killed-delivery lease recovery, and pool reconnect. Queue deployments fail closed without a store by default. |
+| Compilation controls | Deterministic bounded path and daemon-crash containment implemented; controlled evidence in progress | Compilation has independent bounded concurrency, queue-time metrics, wall/RSS budgets, bounded diagnostics, exact local and dereferenced dependency snapshots, mutation detection, explicit compiler argv/environment/provider identity, a stable Coop-owned Perry object cache, package/compiled-image reuse telemetry, phase/failure metrics, and `coop build`. Timeout/RSS enforcement kills the private process group, and a parent-watching guard also kills that group when daemon SIGKILL bypasses destructors. The real compiler path and an OS parent-kill regression pass. Controlled cold/no-op/incremental/static/activation/rollback trials are reproducible; Linux and long cache/lifecycle soak remain. |
+| Durable queues and database schema | Trusted/dedicated/sharded functional gate complete; soak pending | Coop owns migrations, deployment identity, transactional leases, retry/backoff, DLQ, consumer generations, admission, policy, metrics, authenticated metadata-only list/replay/purge operations, and JSON/raw-byte producer APIs. The real Postgres store and daemon suites prove trusted/dedicated/sharded execution, restart, replacement, rollback leadership, retries, explicit and exhausted DLQ, byte preservation, killed-delivery lease recovery, and pool reconnect. Queue deployments fail closed without a store by default. |
 | Production isolation policy | Trusted/sharded/dedicated policy implemented; Linux shard evidence pending | `[isolation].class` explicitly selects trusted in-process, deterministic bounded multi-app shards, or one supervised dedicated worker, while `inherit` resolves the box default. Shards have stable hash preference with deterministic capacity probing, maximum distinct-app capacity, idempotent generation-scoped load/unload, aggregate cgroup memory/CPU/PID limits, sibling-safe unload, group failure detection, and group restart. Uncertain load outcomes retire the complete failure domain instead of leaking unreachable runtimes. Every daemon-spawned worker is bound to the exact daemon parent. A real two-app daemon test proves shared residency, crash-wide replacement, response recovery, independent unload, and idle-shard death after daemon SIGKILL. Retained delegated-cgroup Linux timeout/saturation/soak evidence and the production default decision remain. |
 
 Current tiny-app controls on the loaded development machine:
@@ -322,7 +322,7 @@ Current tiny-app controls on the loaded development machine:
   only 160 and 312 live arena bytes per tiny app respectively.
 
 The 100-app restart result is operationally different from the 28.89-second
-fresh activation. The latter is a macOS deployment/image-validation cost. Perch
+fresh activation. The latter is a macOS deployment/image-validation cost. Coop
 still uses eager binding and does not transfer that work to the first request.
 
 These macOS measurements are directional because the machine was under heavy
@@ -404,7 +404,7 @@ environment are `2026-08-14-linux-worker-mechanism-optimized.txt` and
 
 | Deployment class | Process topology | Hard-kill boundary | Failure scope | Resource enforcement | Intended use |
 |---|---|---|---|---|---|
-| `trusted` | Application executor inside the Perch daemon | None for synchronous native work | Entire daemon and every in-process app | Admission, byte limits, cooperative wall deadline, descriptive process/arena memory | Mutually trusted apps where minimum latency and maximum density matter most |
+| `trusted` | Application executor inside the Coop daemon | None for synchronous native work | Entire daemon and every in-process app | Admission, byte limits, cooperative wall deadline, descriptive process/arena memory | Mutually trusted apps where minimum latency and maximum density matter most |
 | `sharded` | A deterministic bounded group of apps in one supervised worker | Whole shard process | Every app assigned to that shard generation | Aggregate shard cgroup memory/CPU/PIDs plus per-app admission and byte limits | Default candidate for a dense fleet that still needs bounded crash domains |
 | `dedicated` | One supervised worker per app | That app's worker process | One deployment | Per-worker cgroup memory/CPU/PIDs plus per-app admission and byte limits | Untrusted, crash-prone, or strict hard-deadline workloads |
 | `inherit` | Resolves the box-wide `execution.mode` | Inherited | Inherited | Inherited | Fleet policy without duplicating configuration in every package |
@@ -452,7 +452,7 @@ inside a shard so activation can finish before the old generation drains.
 - Build runtime with Perry's `stdlib` feature so fallback stdlib definitions do
   not bind ahead of the actual stdlib provider.
 - Bind applications directly to the provider install names/SONAMEs.
-- Export only `perry_module_init` and stable Perch-owned HTTP/cron/queue Buffer
+- Export only `perry_module_init` and stable Coop-owned HTTP/cron/queue Buffer
   entry aliases from apps. Resolve Perry's path-derived wrapper names at link
   time so staging paths and compiler naming details are not application ABI.
 - Reject apps that define provider-owned symbols or contain provider code.
@@ -487,7 +487,7 @@ inside a shard so activation can finish before the old generation drains.
 - Obtain and retain a green run of the implemented ELF boundary/roundtrip CI
   workflow; the workflow definition alone is not production evidence.
 - Fix Perry's Linux `Buffer.from([number, ...])` construction and add a focused
-  compiler/runtime regression. Perch must not add a compatibility fallback;
+  compiler/runtime regression. Coop must not add a compatibility fallback;
   its current fixtures use `Buffer.alloc` and indexed writes only to keep the
   server gate independent of the compiler defect.
 - Integrate the root-owned provider installer into production image/package
@@ -509,7 +509,7 @@ provider package. Passing validation may not add per-request work.
 The checked-in reproducer is `benchmarks/next-small`. Workers should extend or
 minimize that fixture rather than inventing unrelated applications. Every fix
 must include a small source-level reproduction and a regression test in Perry
-or Perch, depending on which layer owns the failure.
+or Coop, depending on which layer owns the failure.
 
 The canonical Perry issue tracker is
 [#8040](https://github.com/PerryTS/perry/issues/8040). Every ticket points to
@@ -592,7 +592,7 @@ per-app private state rather than the process-wide provider floor.
 - Verified from the pinned Perry source that host ABI Buffers are allocated
   TENURED in the old generation. Minor collection cannot reclaim them, and no
   automatic full collection occurred during the 50,000-request probe.
-- Rejected host-triggered full GC as a Perch workaround after it corrupted the
+- Rejected host-triggered full GC as a Coop workaround after it corrupted the
   next tiny-app ABI response. An ignored promotion test,
   `host_buffer_churn_is_reclaimed_by_perry`, now preserves the reproducer and
   must pass on any proposed Perry revision.
@@ -672,7 +672,7 @@ misclassified as startup savings.
   matched generation, omits unused handler/tool clones, and uses cached
   admission and request metric handles instead of registry lookup and label
   allocation on every call.
-- A sampled phase trace puts strict PCH2 encode plus decode at roughly 1.4 us
+- A sampled phase trace puts strict COOP encode plus decode at roughly 1.4 us
   and the Perry invocation at roughly 42 us for the tiny Worker oracle. This
   makes Perry execution and Buffer lifetime the next targets, not another
   routing-wrapper micro-optimization. Shared-VM post-change CPU runs varied too
@@ -768,13 +768,13 @@ whether on-demand deployment is operationally viable.
   private source snapshot, including linked workspace packages and package
   manifests, while excluding only Perry's machine-local cache. Hard file and
   byte limits reject pathological dependency trees before compiler spawn.
-- Place Perry's content-keyed object cache in a Perch-owned namespace
+- Place Perry's content-keyed object cache in a Coop-owned namespace
   keyed by the compiler contract so safe frontend/object products are reused
-  across deployments. Record Perry object hit/miss results, Perch package and
+  across deployments. Record Perry object hit/miss results, Coop package and
   compiled-image reuse, and identity/snapshot/compiler/validation/package/
   publication phase success/failure durations. Perry's current dylib report
   does not expose an independent link-cache result.
-- Provide `perch build <deployment>...` and `perch build --all` for explicit
+- Provide `coop build <deployment>...` and `coop build --all` for explicit
   deploy-pipeline prebuild. It verifies and publishes immutable packages but
   never activates them or changes active deployment state.
 - Exercise the complete path with a real compiler/daemon integration: prebuild,
@@ -794,7 +794,7 @@ whether on-demand deployment is operationally viable.
   closure without weakening identity. Today an unused package change causes a
   safe extra rebuild.
 - Keep Perry's existing per-module object cache as the frontend reuse boundary
-  and Perch's verified compiled-image reuse as the no-code-change boundary; add
+  and Coop's verified compiled-image reuse as the no-code-change boundary; add
   another split only if controlled measurements show a remaining bottleneck.
 - Run the retained compilation matrix on the isolated Linux host for stable
   medians, PSS/cgroup memory, and phase-specific CPU/peak RSS.
@@ -814,7 +814,7 @@ applications or block unrelated deployments.
 
 ### HTTP
 
-HTTP ABI v2 is the current baseline: a versioned `PCH2` Buffer carries method,
+HTTP ABI v2 is the current baseline: a versioned `COOP` Buffer carries method,
 URL fields, duplicate headers, address metadata, and raw body bytes in both
 directions.
 
@@ -853,7 +853,7 @@ Completed at the application and durable-service boundaries:
 - public `queue.send` and `queue.sendRaw` producer calls; the raw form crosses
   the application/provider ABI as Buffer pointer plus length and is proven to
   retain arbitrary bytes exactly in Postgres without JSON or Base64;
-- a Perch-owned Postgres migration and pooled store for messages and dead
+- a Coop-owned Postgres migration and pooled store for messages and dead
   letters, including immutable message/deployment/queue identity, raw `BYTEA`
   payloads, attempts, availability, lease owner/token/expiry, timestamps, and
   bounded last-error data;
@@ -940,9 +940,9 @@ host-process abort.
   configured maximum is capped at the command-queue capacity, and acquisition
   is non-waiting so overload cannot create another unbounded queue.
 - Raw HTTP request/header/response and queue payload limits are configured per
-  deployment. Exact PCH2 frame size is checked without allocating another frame;
+  deployment. Exact COOP frame size is checked without allocating another frame;
   the global 16-MiB ABI ceiling still applies.
-- HTTP overload returns stable `503` plus `Retry-After` and `x-perch-error`;
+- HTTP overload returns stable `503` plus `Retry-After` and `x-coop-error`;
   request body/header limits return `413`/`431`, an oversized app response
   returns `502`, and a wall deadline returns `504`.
 - Wall deadlines retain the admission permit until the underlying native work
@@ -1135,15 +1135,15 @@ stronger process-isolated Node topology without reporting that distinction.
   claims/expired leases, delivery outcome and duration, retry/deferral/store
   errors, DLQ totals, pruning, and shared-pool capacity/availability/waiters/
   utilization without message-ID labels.
-- [`ops/prometheus/perch-rules.yml`](ops/prometheus/perch-rules.yml) ships
+- [`ops/prometheus/coop-rules.yml`](ops/prometheus/coop-rules.yml) ships
   recording rules and alerts for the metric surface, HTTP errors, executor
   saturation, worker-transport backlog, rejection/deadline events, activation
   health, crash loops, shard failure, worker OOM kills, durable-queue
   age/DLQ/store failure, rollback, and artifact collection.
-  [`ops/grafana/perch-overview.json`](ops/grafana/perch-overview.json)
+  [`ops/grafana/coop-overview.json`](ops/grafana/coop-overview.json)
   provides the corresponding raw-metric fleet dashboard. The repository
-  validator parses the dashboard, rejects any `perch_*` reference not emitted
-  by `perch-daemon`, and requires a unique matching
+  validator parses the dashboard, rejects any `coop_*` reference not emitted
+  by `coop-daemon`, and requires a unique matching
   [`ops/RUNBOOK.md`](ops/RUNBOOK.md) procedure for every alert. Prometheus
   3.13.2 accepts all 22 rules and its native synthetic suite passes ratio,
   volume, hold-duration, increase, label, and annotation cases. Receiver names
@@ -1160,9 +1160,9 @@ stronger process-isolated Node topology without reporting that distinction.
 - [`ops/smoke-live.sh`](ops/smoke-live.sh) provisions the repository artifacts
   into disposable live services and verifies them over their APIs. A local run
   against Prometheus 3.13.2 and Grafana 13.1.3 loaded all 22 rules, scraped and
-  queried the finite Perch fixture, provisioned dashboard UID
-  `perch-server-overview`, and received a healthy response for datasource UID
-  `perch-prometheus`. The same smoke remains a production-Linux repetition
+  queried the finite Coop fixture, provisioned dashboard UID
+  `coop-server-overview`, and received a healthy response for datasource UID
+  `coop-prometheus`. The same smoke remains a production-Linux repetition
   gate; fleet Alertmanager receivers and credentials are environment-owned.
 
 ### Remaining required metrics
@@ -1437,7 +1437,7 @@ the next step relies on it.
    child-process SIGKILL recovery exist. Repeat the complete matrix on native
    Linux and run the long replacement/collection soak.
 6. **Finish compilation economics — deterministic path implemented.** Queue,
-   phase, failure, Perry object and Perch package/compiled-image cache,
+   phase, failure, Perry object and Coop package/compiled-image cache,
    wall/RSS, and bounded-output metrics;
    process-group termination; exact local/dependency snapshots; audited argv
    and environment; stable cross-deployment cache; mutation rejection; and
@@ -1523,7 +1523,7 @@ common validated fixtures + common Linux harness ──────────�
    and collection soak.
 6. Re-run the implemented cold, no-op, one-module, dependency-only,
    static-only, activation, and rollback compiler matrix on isolated Linux;
-   retain Perry object-cache and Perch reuse data, CPU, wall, PSS/cgroup peak,
+   retain Perry object-cache and Coop reuse data, CPU, wall, PSS/cgroup peak,
    and phase timings, then run the cross-deployment cache/lifecycle soak.
 7. Run the durable-queue concurrency and long-duration soak while sampling
    pool use/saturation, background-task and consumer counts, leases, PSS, and
@@ -1551,10 +1551,10 @@ scripts/build-perry-libraries.sh
 
 # Linux production package; captures the exact content-addressed directory.
 provider_dir="$(sudo scripts/install-perry-provider-package.sh \
-  var/perch/lib /opt/perch/providers)"
+  var/coop/lib /opt/coop/providers)"
 
 # Build server binaries and the reproducible tiny Perry app
-cargo build --release -p perch-daemon -p perch-worker
+cargo build --release -p coop-daemon -p coop-worker
 scripts/prepare-resource-benchmark.sh
 metadata="$(mktemp)"
 scripts/capture-linux-benchmark-environment.sh > "$metadata"
@@ -1562,28 +1562,28 @@ mv "$metadata" benchmarks/results/linux-benchmark-environment.txt
 
 # On delegated cgroup-v2 hosts, start the complete command topology inside the
 # delegated subtree before asking the harness to create worker/benchmark groups
-PERCH_DELEGATED_CGROUP_ROOT=/sys/fs/cgroup/perch-delegated \
-scripts/run-in-delegated-cgroup.sh cargo test -p perch-host-abi
+COOP_DELEGATED_CGROUP_ROOT=/sys/fs/cgroup/coop-delegated \
+scripts/run-in-delegated-cgroup.sh cargo test -p coop-host-abi
 
 # Prebuild and verify immutable packages without activation
-cargo run --release -p perch-daemon -- \
-  --config var/perch/runtime.toml build --all
+cargo run --release -p coop-daemon -- \
+  --config var/coop/runtime.toml build --all
 
 # Immutable package, rollback, static snapshot, restart, and compiler-budget proof
-cargo test -p perch-daemon artifacts -- --nocapture
+cargo test -p coop-daemon artifacts -- --nocapture
 # Also covers two-app shard residency, group crash recovery, sibling-safe
 # unload, and idle-shard cleanup after daemon SIGKILL
-cargo test -p perch-daemon --test auto_compile -- --nocapture
+cargo test -p coop-daemon --test auto_compile -- --nocapture
 
 # Validate the real shared-runtime loader
-cargo test -p perch-worker --test plugin_roundtrip -- --nocapture
+cargo test -p coop-worker --test plugin_roundtrip -- --nocapture
 
 # Disposable pinned-Postgres queue gate, including full database stop/start
 scripts/run-durable-queue-integration.sh
 
 # Perry promotion gate: intentionally fails on the pinned revision until
 # host request/response Buffers are safely reclaimed
-cargo test -p perch-worker --test plugin_roundtrip \
+cargo test -p coop-worker --test plugin_roundtrip \
   host_buffer_churn_is_reclaimed_by_perry -- --ignored --nocapture
 
 # Compilation matrix plus byte-identical full-daemon replacement soak
@@ -1592,31 +1592,31 @@ node benchmarks/compilation-economics.mjs \
   --output benchmarks/results/lifecycle-soak.json
 
 # Perry 1/10/100 resource matrix
-PERCH_BENCH_APP_COUNTS=1,10,100 \
-PERCH_BENCH_TRIALS=5 \
-PERCH_BENCH_REQUESTS=20000 \
-cargo test --release -p perch-daemon --test resource_benchmark \
+COOP_BENCH_APP_COUNTS=1,10,100 \
+COOP_BENCH_TRIALS=5 \
+COOP_BENCH_REQUESTS=20000 \
+cargo test --release -p coop-daemon --test resource_benchmark \
   measure_in_process_startup_and_rss -- --ignored --nocapture
 
 # Consolidated and isolated Node matrix
-PERCH_BENCH_NODE_SCENARIOS=1x1,1x10,1x100,10x1,100x1 \
-PERCH_BENCH_TRIALS=5 \
-PERCH_BENCH_REQUESTS=20000 \
-cargo test --release -p perch-daemon --test node_resource_benchmark \
+COOP_BENCH_NODE_SCENARIOS=1x1,1x10,1x100,10x1,100x1 \
+COOP_BENCH_TRIALS=5 \
+COOP_BENCH_REQUESTS=20000 \
+cargo test --release -p coop-daemon --test node_resource_benchmark \
   measure_node_process_startup_and_rss -- --ignored --nocapture
 
 # Equivalent Worker-shaped Perry/Node/celld mechanism comparison. Build the
 # exact celld-main.lock revision first and provide esbuild 0.28.0. Point Perry
 # at the exact directory printed by the provider installer.
-export PERCH_DELEGATED_CGROUP_ROOT=/sys/fs/cgroup/perch-delegated
-export PERCH_BENCH_CGROUP_ROOT=$PERCH_DELEGATED_CGROUP_ROOT/benchmarks
-export PERCH_BENCH_PROVIDER_VERIFICATION=root_owned_immutable
-export PERCH_BENCH_RUNTIME="$provider_dir/libperry_runtime.so"
-export PERCH_BENCH_STDLIB="$provider_dir/libperry_stdlib.so"
+export COOP_DELEGATED_CGROUP_ROOT=/sys/fs/cgroup/coop-delegated
+export COOP_BENCH_CGROUP_ROOT=$COOP_DELEGATED_CGROUP_ROOT/benchmarks
+export COOP_BENCH_PROVIDER_VERIFICATION=root_owned_immutable
+export COOP_BENCH_RUNTIME="$provider_dir/libperry_runtime.so"
+export COOP_BENCH_STDLIB="$provider_dir/libperry_stdlib.so"
 CELLD_ESBUILD=/absolute/path/to/esbuild-0.28.0 \
-PERCH_BENCH_INCLUDE_CELLD=1 \
-PERCH_BENCH_TRIALS=5 \
-PERCH_BENCH_REQUESTS=20000 \
+COOP_BENCH_INCLUDE_CELLD=1 \
+COOP_BENCH_TRIALS=5 \
+COOP_BENCH_REQUESTS=20000 \
 scripts/run-in-delegated-cgroup.sh \
   scripts/run-worker-mechanism-benchmark.sh
 ```
@@ -1632,7 +1632,7 @@ To minimize conflicts between workers:
 
 - Perry compatibility workers own compiler/runtime fixes and minimal Next
   reproducers in the Perry repository.
-- Perch hosting workers own provider loading, app lifecycle, ABI enforcement,
+- Coop hosting workers own provider loading, app lifecycle, ABI enforcement,
   executor behavior, and hot replacement.
 - Benchmark workers own fixtures, harnesses, Linux environment capture, and raw
   result files; they do not rewrite compatibility code to improve a score.

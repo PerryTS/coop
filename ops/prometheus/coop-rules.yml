@@ -1,0 +1,210 @@
+groups:
+  - name: coop-recording
+    interval: 30s
+    rules:
+      - record: coop:http_request_rate5m
+        expr: sum by (deployment) (rate(coop_requests_total[5m]))
+
+      - record: coop:http_error_ratio5m
+        expr: |
+          sum by (deployment) (rate(coop_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum by (deployment) (rate(coop_requests_total[5m])), 0.001)
+
+      - record: coop:http_latency_p95_seconds5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (deployment, le) (rate(coop_request_duration_seconds_bucket[5m]))
+          )
+
+      - record: coop:executor_queue_utilization
+        expr: |
+          coop_executor_queue_depth
+          /
+          clamp_min(coop_executor_queue_capacity, 1)
+
+      - record: coop:queue_failed_delivery_ratio5m
+        expr: |
+          sum by (deployment, queue) (
+            rate(coop_queue_deliveries_total{outcome!="ack"}[5m])
+          )
+          /
+          clamp_min(
+            sum by (deployment, queue) (rate(coop_queue_deliveries_total[5m])),
+            0.001
+          )
+
+  - name: coop-alerts
+    interval: 30s
+    rules:
+      - alert: CoopMetricSurfaceMissing
+        expr: absent_over_time(coop_deployments_total[5m]) == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Coop metrics have disappeared
+          description: No coop_deployments_total sample has been scraped for five minutes.
+          runbook: ops/RUNBOOK.md#coopmetricsurfacemissing
+
+      - alert: CoopHttpErrorRateHigh
+        expr: |
+          (
+            sum by (deployment) (rate(coop_requests_total{status=~"5.."}[5m]))
+            /
+            clamp_min(sum by (deployment) (rate(coop_requests_total[5m])), 0.001)
+          ) > 0.05
+          and
+          sum by (deployment) (rate(coop_requests_total[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Coop HTTP error ratio is high
+          description: Deployment {{ $labels.deployment }} has exceeded 5% HTTP 5xx responses for ten minutes.
+          runbook: ops/RUNBOOK.md#coophttperrorratehigh
+
+      - alert: CoopExecutorQueueSaturated
+        expr: |
+          coop_executor_queue_depth
+          /
+          clamp_min(coop_executor_queue_capacity, 1) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Coop executor queue is saturated
+          description: Deployment {{ $labels.deployment }} has remained above 90% executor queue use for ten minutes.
+          runbook: ops/RUNBOOK.md#coopexecutorqueuesaturated
+
+      - alert: CoopWorkerTransportBacklogged
+        expr: coop_worker_transport_backlog > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Coop worker transport is continuously backlogged
+          description: Deployment {{ $labels.deployment }} has waited continuously for its ordered worker connection for five minutes.
+          runbook: ops/RUNBOOK.md#coopworkertransportbacklogged
+
+      - alert: CoopWorkerTransportCancelledActive
+        expr: sum by (deployment, entrypoint) (increase(coop_worker_transport_cancellations_total{phase="active"}[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: An active Coop worker exchange was cancelled
+          description: Deployment {{ $labels.deployment }} dropped an active {{ $labels.entrypoint }} exchange; its ordered connection has been poisoned and must be replaced.
+          runbook: ops/RUNBOOK.md#coopworkertransportcancelledactive
+
+      - alert: CoopAdmissionRejections
+        expr: sum by (deployment, entrypoint, reason) (increase(coop_invocation_rejections_total[10m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Coop rejected admitted work
+          description: Deployment {{ $labels.deployment }} rejected {{ $value }} {{ $labels.entrypoint }} invocations in ten minutes ({{ $labels.reason }}).
+          runbook: ops/RUNBOOK.md#coopadmissionrejections
+
+      - alert: CoopInvocationTimeouts
+        expr: sum by (deployment, entrypoint) (increase(coop_invocation_timeouts_total[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Coop invocation deadline exceeded
+          description: Deployment {{ $labels.deployment }} timed out {{ $value }} {{ $labels.entrypoint }} invocations in five minutes.
+          runbook: ops/RUNBOOK.md#coopinvocationtimeouts
+
+      - alert: CoopActivationUnhealthy
+        expr: coop_deployment_activation_healthy == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Coop deployment activation is unhealthy
+          description: Deployment {{ $labels.deployment }} failed its latest activation probe.
+          runbook: ops/RUNBOOK.md#coopactivationunhealthy
+
+      - alert: CoopWorkerCrashLoop
+        expr: sum by (deployment) (increase(coop_worker_restarts_total[10m])) >= 3
+        labels:
+          severity: critical
+        annotations:
+          summary: Coop worker is restarting repeatedly
+          description: Deployment {{ $labels.deployment }} restarted at least three times in ten minutes.
+          runbook: ops/RUNBOOK.md#coopworkercrashloop
+
+      - alert: CoopShardFailure
+        expr: sum by (slot, reason) (increase(coop_worker_shard_failures_total[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Coop worker shard failed
+          description: Shard {{ $labels.slot }} failed in the last five minutes ({{ $labels.reason }}); resident deployments may be recovering.
+          runbook: ops/RUNBOOK.md#coopshardfailure
+
+      - alert: CoopWorkerOomKilled
+        expr: coop_worker_cgroup_memory_oom_kill_events > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Coop worker cgroup recorded an OOM kill
+          description: Deployment {{ $labels.deployment }} has an OOM-kill event in its current worker cgroup.
+          runbook: ops/RUNBOOK.md#coopworkeroomkilled
+
+      - alert: CoopQueueBacklogOld
+        expr: coop_queue_oldest_visible_age_seconds > 60
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Coop queue backlog is old
+          description: Queue {{ $labels.deployment }}/{{ $labels.queue }} has retained visible work older than 60 seconds for 15 minutes.
+          runbook: ops/RUNBOOK.md#coopqueuebacklogold
+
+      - alert: CoopQueuePoolSaturated
+        expr: coop_queue_pool_utilization_ratio > 0.9 or coop_queue_pool_waiters > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Coop durable-queue connection pool is saturated
+          description: The shared queue pool has remained above 90% checked-out capacity or has waiting borrowers for five minutes.
+          runbook: ops/RUNBOOK.md#coopqueuepoolsaturated
+
+      - alert: CoopQueueDeadLetters
+        expr: coop_queue_dead_letters > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Coop queue contains dead letters
+          description: Queue {{ $labels.deployment }}/{{ $labels.queue }} contains {{ $value }} dead letters.
+          runbook: ops/RUNBOOK.md#coopqueuedeadletters
+
+      - alert: CoopQueueStoreErrors
+        expr: sum by (operation) (increase(coop_queue_store_errors_total[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Coop durable queue store failed
+          description: Queue-store operation {{ $labels.operation }} failed {{ $value }} times in five minutes.
+          runbook: ops/RUNBOOK.md#coopqueuestoreerrors
+
+      - alert: CoopRollbackFailed
+        expr: sum by (deployment) (increase(coop_deployment_rollbacks_total{outcome="failure"}[15m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Coop deployment rollback failed
+          description: Deployment {{ $labels.deployment }} failed a rollback in the last 15 minutes.
+          runbook: ops/RUNBOOK.md#cooprollbackfailed
+
+      - alert: CoopArtifactCollectionFailed
+        expr: sum by (deployment) (increase(coop_artifact_collections_total{outcome="failure"}[30m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Coop artifact collection failed
+          description: Deployment {{ $labels.deployment }} failed artifact collection in the last 30 minutes.
+          runbook: ops/RUNBOOK.md#coopartifactcollectionfailed
