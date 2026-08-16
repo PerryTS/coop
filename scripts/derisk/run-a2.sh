@@ -27,7 +27,7 @@ fi
 echo "==> building Rust host (this links perry-runtime)"
 (cd "${HOST_DIR}" && cargo build --release)
 
-HOST_BIN="${HOST_DIR}/target/release/perch-derisk-host"
+HOST_BIN="${HOST_DIR}/target/release/coop-derisk-host"
 
 echo "==> running ${HOST_BIN} ${PLUGIN}"
 "${HOST_BIN}" "${PLUGIN}"

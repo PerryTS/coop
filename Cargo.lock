@@ -1313,6 +1313,116 @@ dependencies = [
 ]
 
 [[package]]
+name = "coop-cli"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "coop-daemon"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "askama",
+ "askama_axum",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "bcrypt 0.17.1",
+ "bytes",
+ "chrono",
+ "clap",
+ "coop-host-abi",
+ "coop-worker",
+ "cron 0.12.1",
+ "futures",
+ "hyper",
+ "libc",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "nanoid 0.4.0",
+ "notify",
+ "notify-debouncer-mini",
+ "reqwest",
+ "rusqlite",
+ "rustls",
+ "rustls-acme",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-postgres",
+ "tokio-rustls",
+ "tokio-util",
+ "toml",
+ "tower",
+ "tower-http 0.5.2",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "coop-derisk-host"
+version = "0.0.1"
+dependencies = [
+ "perry-runtime",
+]
+
+[[package]]
+name = "coop-host-abi"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "coop-perry-stdlib-shared"
+version = "0.0.1"
+dependencies = [
+ "perry-ffi",
+ "perry-stdlib",
+]
+
+[[package]]
+name = "coop-worker"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "chrono",
+ "clap",
+ "coop-host-abi",
+ "cron 0.12.1",
+ "deadpool-postgres",
+ "libc",
+ "nanoid 0.4.0",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-postgres",
+ "tokio-util",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4626,116 +4736,6 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
-
-[[package]]
-name = "perch-cli"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "clap",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "perch-daemon"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "arc-swap",
- "askama",
- "askama_axum",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "bcrypt 0.17.1",
- "bytes",
- "chrono",
- "clap",
- "cron 0.12.1",
- "futures",
- "hyper",
- "libc",
- "metrics",
- "metrics-exporter-prometheus",
- "nanoid 0.4.0",
- "notify",
- "notify-debouncer-mini",
- "perch-host-abi",
- "perch-worker",
- "reqwest",
- "rusqlite",
- "rustls",
- "rustls-acme",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-postgres",
- "tokio-rustls",
- "tokio-util",
- "toml",
- "tower",
- "tower-http 0.5.2",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "perch-derisk-host"
-version = "0.0.1"
-dependencies = [
- "perry-runtime",
-]
-
-[[package]]
-name = "perch-host-abi"
-version = "0.0.1"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "perch-perry-stdlib-shared"
-version = "0.0.1"
-dependencies = [
- "perry-ffi",
- "perry-stdlib",
-]
-
-[[package]]
-name = "perch-worker"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "chrono",
- "clap",
- "cron 0.12.1",
- "deadpool-postgres",
- "libc",
- "nanoid 0.4.0",
- "perch-host-abi",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-postgres",
- "tokio-util",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "perry-diagnostics"

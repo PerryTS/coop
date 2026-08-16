@@ -14,14 +14,14 @@ if [[ ! -f "${DYLIB}" ]]; then
 fi
 
 echo "==> running v5 roundtrip test via Rust"
-# Use the perch-derisk-host (which links perry-runtime) but with a custom
+# Use the coop-derisk-host (which links perry-runtime) but with a custom
 # invocation. For now, a quick inline Rust program via cargo-script:
 # Actually let's just test via a small script that:
 # 1. dlopens the dylib
 # 2. calls perry_fn_echo_v5_ts__handle with a NaN-boxed JSON string
 # 3. prints the return
 
-# For the quick test, I'll use perch-derisk-host's tool invocation path
+# For the quick test, I'll use coop-derisk-host's tool invocation path
 # since both use NaN-boxed strings. The tool "greet" won't work (wrong
 # dylib), but we can make a tiny test binary. For now just verify symbols:
 

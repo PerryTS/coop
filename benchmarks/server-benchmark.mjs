@@ -106,7 +106,7 @@ for (let trial = 1; trial <= options.trials; trial += 1) {
     };
     samples.push(sample);
     console.log(formatSample(options.name, trial, options.requests, sample));
-    if (process.env.PERCH_BENCH_TRACE_SERVER_LOG === "1" && serverLog.trim() !== "") {
+    if (process.env.COOP_BENCH_TRACE_SERVER_LOG === "1" && serverLog.trim() !== "") {
       console.log(`server_log name=${JSON.stringify(options.name)} trial=${trial}\n${serverLog.trim()}`);
     }
   } catch (error) {
@@ -137,7 +137,7 @@ function parseArguments(arguments_) {
     concurrency: 50,
     port: 4580,
     readyTimeoutMs: 120_000,
-    cgroupRoot: process.env.PERCH_BENCH_CGROUP_ROOT ?? "",
+    cgroupRoot: process.env.COOP_BENCH_CGROUP_ROOT ?? "",
     environment: [],
     command: [],
   };
@@ -227,7 +227,7 @@ function commandForCgroup(command, cgroup) {
     "/bin/sh",
     "-c",
     'set -e; printf "%s\\n" "$$" > "$1"; shift; exec "$@"',
-    "perch-cgroup-exec",
+    "coop-cgroup-exec",
     path.join(cgroup, "cgroup.procs"),
     ...command,
   ];

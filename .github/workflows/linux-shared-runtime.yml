@@ -10,8 +10,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: linux-shared-runtime-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Scoped to pull requests, and keyed by SHA rather than ref for everything
+  # else. Both halves matter, and this job had neither.
+  #
+  # `github.ref` is constant on `main`, so every merge landed in the same
+  # concurrency group as the previous one and cancelled it. With an
+  # unconditional `cancel-in-progress`, and a runner queue that has held jobs
+  # for over an hour here, a normal merge day cancels each `main` run before it
+  # reaches a runner -- the proof never executes and never reports. Run
+  # 31950622999 is an instance: cancelled after 20 seconds by the next merge.
+  #
+  # Cancelling a superseded *pull request* run is still right: it is the same
+  # branch, re-pushed, and the older result is genuinely obsolete.
+  group: linux-shared-runtime-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   native-elf:
@@ -38,7 +50,25 @@ jobs:
             pkg-config libssl-dev zlib1g-dev
           prefix="$(llvm-config-22 --prefix)"
           llvm-config-22 --version | grep -q '^22\.'
-          sudo ln -sf /usr/bin/clang-22 "$prefix/bin/clang"
+          # apt.llvm.org now ships `$prefix/bin/clang` itself, and `/usr/bin/clang-22`
+          # resolves to that same file -- so `ln -sf` refuses with "are the same
+          # file", exit 1, and `set -e` kills the job during dependency install.
+          # That is how this proof came to fail before running a single step of
+          # what it exists to prove.
+          #
+          # What the build actually needs is a usable `clang` on `$prefix/bin`
+          # (added to PATH below). So assert THAT, and only create the link when
+          # it is missing. Asserting the postcondition rather than the success of
+          # the `ln` is the point: the packaging can change again, and a check on
+          # the end state survives it either way.
+          if ! "$prefix/bin/clang" --version >/dev/null 2>&1; then
+            sudo ln -sf /usr/bin/clang-22 "$prefix/bin/clang"
+          fi
+          "$prefix/bin/clang" --version | grep -qE '\bversion 22\.' || {
+            echo "::error::$prefix/bin/clang is missing or is not LLVM 22:"
+            "$prefix/bin/clang" --version || true
+            exit 1
+          }
           echo "LLVM_SYS_221_PREFIX=$prefix" >> "$GITHUB_ENV"
           echo "$prefix/bin" >> "$GITHUB_PATH"
 
@@ -60,25 +90,25 @@ jobs:
           set -euo pipefail
           scripts/build-perry-libraries.sh
           test -z "$(git -C .perry-main status --short)"
-          cargo build --release -p perch-daemon -p perch-worker
+          cargo build --release -p coop-daemon -p coop-worker
           scripts/prepare-resource-benchmark.sh
 
       - name: Prove ELF provider and application boundaries
         shell: bash
         run: |
           set -euo pipefail
-          runtime=var/perch/lib/libperry_runtime.so
-          stdlib=var/perch/lib/libperry_stdlib.so
+          runtime=var/coop/lib/libperry_runtime.so
+          stdlib=var/coop/lib/libperry_stdlib.so
           app="$(find target/dynamic-smoke/compiled/test1 -mindepth 2 -maxdepth 2 -name app.so -print -quit)"
           test -f "$runtime" -a -f "$stdlib" -a -f "$app"
           readelf -d "$runtime" | grep -F 'SONAME' | grep -F 'libperry_runtime.so'
           readelf -d "$stdlib" | grep -F 'NEEDED' | grep -F 'libperry_runtime.so'
           readelf -d "$app" | grep -F 'NEEDED' | grep -F 'libperry_runtime.so'
           readelf -d "$app" | grep -F 'NEEDED' | grep -F 'libperry_stdlib.so'
-          nm -D --defined-only "$app" | awk '{print $3}' | sort > /tmp/perch-app-exports.txt
-          test "$(wc -l < /tmp/perch-app-exports.txt)" -eq 2
-          grep -Fx perch_app_http_v2 /tmp/perch-app-exports.txt
-          grep -Fx perry_module_init /tmp/perch-app-exports.txt
+          nm -D --defined-only "$app" | awk '{print $3}' | sort > /tmp/coop-app-exports.txt
+          test "$(wc -l < /tmp/coop-app-exports.txt)" -eq 2
+          grep -Fx coop_app_http_v2 /tmp/coop-app-exports.txt
+          grep -Fx perry_module_init /tmp/coop-app-exports.txt
 
       - name: Delegate a cgroup-v2 subtree for worker enforcement
         shell: bash
@@ -86,7 +116,7 @@ jobs:
           set -euo pipefail
           relative="$(awk -F: '$1 == "0" { print $3 }' /proc/self/cgroup)"
           parent="/sys/fs/cgroup${relative}"
-          root="${parent}/perch-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          root="${parent}/coop-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           test -f "$parent/cgroup.controllers"
           sudo mkdir "$root"
           for controller in memory cpu pids; do
@@ -95,9 +125,9 @@ jobs:
           echo '+memory +cpu +pids' | sudo tee "$root/cgroup.subtree_control" >/dev/null
           sudo chown "$(id -u):$(id -g)" \
             "$root" "$root/cgroup.procs" "$root/cgroup.subtree_control"
-          echo "PERCH_DELEGATED_CGROUP_ROOT=${root}" >> "$GITHUB_ENV"
-          echo "PERCH_TEST_CGROUP_ROOT=${root}/workers" >> "$GITHUB_ENV"
-          echo "PERCH_BENCH_CGROUP_ROOT=${root}/benchmarks" >> "$GITHUB_ENV"
+          echo "COOP_DELEGATED_CGROUP_ROOT=${root}" >> "$GITHUB_ENV"
+          echo "COOP_TEST_CGROUP_ROOT=${root}/workers" >> "$GITHUB_ENV"
+          echo "COOP_BENCH_CGROUP_ROOT=${root}/benchmarks" >> "$GITHUB_ENV"
 
       - name: Capture exact Linux benchmark environment
         shell: bash
@@ -113,27 +143,27 @@ jobs:
           set -euo pipefail
           scripts/run-in-delegated-cgroup.sh bash -c '
             set -euo pipefail
-            cargo test -p perch-host-abi
-            cargo test -p perch-worker --test provider_integrity -- --nocapture
-            cargo test -p perch-daemon --bin perch cgroup::tests -- --nocapture
-            cargo test -p perch-worker --test plugin_roundtrip shared_runtime_app_roundtrip -- --nocapture
-            cargo test -p perch-worker --test plugin_roundtrip repeated_load_dispatch_shutdown_reclaims_executor_threads -- --ignored --nocapture
-            cargo test -p perch-daemon --test auto_compile -- --nocapture
-            cargo test -p perch-worker --test plugin_roundtrip hundred_preloaded_apps_dispatch -- --ignored --nocapture
+            cargo test -p coop-host-abi
+            cargo test -p coop-worker --test provider_integrity -- --nocapture
+            cargo test -p coop-daemon --bin coop cgroup::tests -- --nocapture
+            cargo test -p coop-worker --test plugin_roundtrip shared_runtime_app_roundtrip -- --nocapture
+            cargo test -p coop-worker --test plugin_roundtrip repeated_load_dispatch_shutdown_reclaims_executor_threads -- --ignored --nocapture
+            cargo test -p coop-daemon --test auto_compile -- --nocapture
+            cargo test -p coop-worker --test plugin_roundtrip hundred_preloaded_apps_dispatch -- --ignored --nocapture
           '
 
       - name: Linux Perry 1/10/100 RSS, PSS, private-dirty, and cgroup evidence
         shell: bash
         env:
-          PERCH_BENCH_APP_COUNTS: 1,10,100
-          PERCH_BENCH_TRIALS: "2"
-          PERCH_BENCH_REQUESTS: "2000"
-          PERCH_BENCH_PRELOAD_CONCURRENCY: "4"
+          COOP_BENCH_APP_COUNTS: 1,10,100
+          COOP_BENCH_TRIALS: "2"
+          COOP_BENCH_REQUESTS: "2000"
+          COOP_BENCH_PRELOAD_CONCURRENCY: "4"
         run: |
           set -euo pipefail
           scripts/run-in-delegated-cgroup.sh bash -c '
             set -euo pipefail
-            cargo test --release -p perch-daemon --test resource_benchmark \
+            cargo test --release -p coop-daemon --test resource_benchmark \
               measure_in_process_startup_and_rss -- --ignored --nocapture \
               2>&1 | tee linux-resource-results.txt
           '
@@ -141,14 +171,14 @@ jobs:
       - name: Linux Node consolidated and isolated RSS, PSS, private-dirty, and cgroup evidence
         shell: bash
         env:
-          PERCH_BENCH_NODE_SCENARIOS: 1x1,1x10,1x100,10x1,100x1
-          PERCH_BENCH_TRIALS: "2"
-          PERCH_BENCH_REQUESTS: "2000"
+          COOP_BENCH_NODE_SCENARIOS: 1x1,1x10,1x100,10x1,100x1
+          COOP_BENCH_TRIALS: "2"
+          COOP_BENCH_REQUESTS: "2000"
         run: |
           set -euo pipefail
           scripts/run-in-delegated-cgroup.sh bash -c '
             set -euo pipefail
-            cargo test --release -p perch-daemon --test node_resource_benchmark \
+            cargo test --release -p coop-daemon --test node_resource_benchmark \
               measure_node_process_startup_and_rss -- --ignored --nocapture \
               2>&1 | tee linux-node-resource-results.txt
           '

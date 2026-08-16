@@ -1,6 +1,6 @@
 # Status: what is real
 
-This page exists because `perch-spec-v0.md` describes an intended end state, and
+This page exists because `coop-spec-v0.md` describes an intended end state, and
 it would be easy to read it as a feature list. This is the current reality.
 
 Last reviewed against the tree at the time of writing; if you are unsure, the
@@ -28,7 +28,7 @@ code is authoritative and this page is not.
 
 ## Partial
 
-- **`@perch/runtime`.** `log` and `queue` are wired end to end. `kv` and
+- **`@coop/runtime`.** `log` and `queue` are wired end to end. `kv` and
   `storage` are implemented and reach real backends — Redis through Perry's
   `ioredis`, and files under a per-deployment directory — but **only for a
   deployment with its own worker process** (`isolation.class = "dedicated"`),
@@ -36,17 +36,17 @@ code is authoritative and this page is not.
   set of. In `in_process` and `sharded` modes they throw rather than share a
   keyspace or a directory across deployments.
 
-  `secrets`, `db` and `perchFetch` are the remaining half-wired ones: the
+  `secrets`, `db` and `coopFetch` are the remaining half-wired ones: the
   TypeScript modules are complete, but **nothing in the daemon or worker exports
-  the variables they read** (`PERCH_SECRET_<NAME>`, `PERCH_DB_URL`,
-  `PERCH_FETCH_ALLOWLIST`). `[capabilities]` parses in `perch.toml` and is never
-  read. `perchFetch` in particular is not an egress control today: an empty
+  the variables they read** (`COOP_SECRET_<NAME>`, `COOP_DB_URL`,
+  `COOP_FETCH_ALLOWLIST`). `[capabilities]` parses in `coop.toml` and is never
+  read. `coopFetch` in particular is not an egress control today: an empty
   allowlist permits every domain. See [the API page](runtime-api.md).
-- **`perch.toml` surface.** The keys documented in
-  [the reference](perch-toml.md) are what deployments use. The spec describes
+- **`coop.toml` surface.** The keys documented in
+  [the reference](coop-toml.md) are what deployments use. The spec describes
   further sections (capabilities, secrets allowlists, cron and queue bindings in
   config) whose machinery partly exists in the worker but which are not all
-  reachable from `perch.toml` today.
+  reachable from `coop.toml` today.
 - **Framework support.** A production Next.js App Route compiles and serves. That
   is a real demonstration, not a general guarantee — see
   [the subset page](subset.md).

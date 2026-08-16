@@ -7,10 +7,10 @@ name: Fast check
 # budgeted at two hours. Nothing in this repository gave a contributor feedback
 # before that finished.
 #
-# perch-host-abi, perch-worker and perch-cli have NO Perry dependency — the
+# coop-host-abi, coop-worker and coop-cli have NO Perry dependency — the
 # worker loads application images with dlopen at runtime rather than linking
 # them — so they build, lint and test with a stock Rust toolchain in minutes.
-# perch-daemon and perry-stdlib-shared do depend on Perry and stay with the
+# coop-daemon and perry-stdlib-shared do depend on Perry and stay with the
 # proof job.
 
 on:
@@ -33,7 +33,7 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
   # Perry-free crates only; see the header.
-  PERRY_FREE_CRATES: "-p perch-host-abi -p perch-worker -p perch-cli"
+  PERRY_FREE_CRATES: "-p coop-host-abi -p coop-worker -p coop-cli"
 
 jobs:
   fast-check:
@@ -83,46 +83,74 @@ jobs:
       # stops at the first failing target and silently skips the remaining
       # worker test binaries, which reads as a pass.
       #
-      # Three perch-worker suites — plugin_roundtrip, provider_integrity and
-      # binary_http_roundtrip — load real application dylibs against built
+      # Three coop-worker suites -- plugin_roundtrip, provider_integrity and
+      # binary_http_roundtrip -- load real application dylibs against built
       # Perry provider images. They cannot run without those artifacts and
-      # belong to the shared-runtime proof job, not to a fast gate. They are
-      # named individually rather than excluded by a pattern so that adding a
-      # fourth provider suite fails here loudly instead of being skipped
-      # silently.
+      # belong to the shared-runtime proof job, not to a fast gate.
+      #
+      # This is an EXCLUDE list, not a run list. It was a run list, and that is
+      # a gate hole: `runtime_package_behavior` (11 Perry-free tests covering kv
+      # and storage) was added by a PR and simply never ran here, because
+      # nothing added it to the list. A whitelist of what to run makes a new
+      # suite invisible by default; a blocklist of what to skip makes it run by
+      # default and forces a deliberate edit to exclude it.
+      #
+      # The named-suite check below then fails if an excluded suite disappears,
+      # so a rename cannot leave a stale exclusion silently skipping nothing.
       - name: Tests (Perry-free crates, provider suites excluded)
+        shell: bash
         run: |
-          cargo test -p perch-host-abi --no-fail-fast
-          cargo test -p perch-cli --no-fail-fast
-          cargo test -p perch-worker --lib --no-fail-fast
-          cargo test -p perch-worker --test socket_framing --no-fail-fast
+          set -euo pipefail
+          provider_suites=(plugin_roundtrip provider_integrity binary_http_roundtrip)
+
+          present="$(ls crates/coop-worker/tests/*.rs | xargs -n1 basename | sed 's/\.rs$//')"
+          for suite in "${provider_suites[@]}"; do
+            grep -qx "$suite" <<<"$present" || {
+              echo "::error::Excluded provider suite '$suite' no longer exists."
+              echo "::error::Delete it from provider_suites, or the exclusion is skipping nothing."
+              exit 1
+            }
+          done
+
+          cargo test -p coop-host-abi --no-fail-fast
+          cargo test -p coop-cli --no-fail-fast
+          cargo test -p coop-worker --lib --no-fail-fast
+
+          while read -r suite; do
+            skip=""
+            for p in "${provider_suites[@]}"; do [ "$p" = "$suite" ] && skip=1; done
+            [ -n "$skip" ] && { echo "skipping provider suite: $suite"; continue; }
+            echo "::group::coop-worker --test $suite"
+            cargo test -p coop-worker --test "$suite" --no-fail-fast
+            echo "::endgroup::"
+          done <<<"$present"
 
       # Several suites self-skip when their fixtures are absent (no providers,
       # no compiled Perry). A skip is an early `return`, which counts as a pass
-      # in the summary line — so surface them rather than letting a green run
+      # in the summary line -- so surface them rather than letting a green run
       # hide that nothing executed.
       - name: Report self-skipped suites
         if: always()
         run: |
           # Case-insensitive and unanchored on purpose: this repository prints
-          # BOTH `skip:` (12 sites) and `SKIP:` (10 sites), and an anchored
-          # lowercase pattern silently saw only half of them — a skip-detector
-          # that cannot see skips is the exact failure this step exists to catch.
-          cargo test -p perch-host-abi -p perch-cli -p perch-worker --no-fail-fast -- --nocapture 2>&1 \
+          # BOTH `skip:` and `SKIP:`, and an anchored lowercase pattern silently
+          # saw only half of them -- a skip-detector that cannot see skips is the
+          # exact failure this step exists to catch.
+          cargo test -p coop-host-abi -p coop-cli -p coop-worker --no-fail-fast -- --nocapture 2>&1 \
             | grep -iE 'skip:' || echo "no suites self-skipped"
 
       - name: TypeScript runtime package typechecks
         run: |
-          if [ -f packages/perch-runtime/package.json ]; then
-            cd packages/perch-runtime
+          if [ -f packages/coop-runtime/package.json ]; then
+            cd packages/coop-runtime
             npm ci --silent || npm install --silent
             npx --yes tsc --noEmit || {
-              echo "::warning::@perch/runtime does not typecheck under tsc."
+              echo "::warning::@coop/runtime does not typecheck under tsc."
               echo "::warning::Note this is advisory: Perry compiles a subset, so tsc is neither necessary nor sufficient."
               exit 0
             }
           else
-            echo "no packages/perch-runtime/package.json — skipping"
+            echo "no packages/coop-runtime/package.json — skipping"
           fi
 
       - name: Documentation builds

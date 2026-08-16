@@ -2,20 +2,20 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-fixture_root="${PERCH_BENCH_FIXTURE_DIR:-$repo_root/target/dynamic-smoke}"
-daemon="${PERCH_BENCH_DAEMON:-$repo_root/target/release/perch}"
-perry="${PERCH_BENCH_PERRY:-$repo_root/.perry-main/target/perry-dev/perry}"
-provider_verification="${PERCH_BENCH_PROVIDER_VERIFICATION:-full_hash}"
-gc_reclaim_check_interval="${PERCH_BENCH_GC_RECLAIM_CHECK_INTERVAL:-0}"
-gc_reclaim_growth_bytes="${PERCH_BENCH_GC_RECLAIM_GROWTH_BYTES:-262144}"
+fixture_root="${COOP_BENCH_FIXTURE_DIR:-$repo_root/target/dynamic-smoke}"
+daemon="${COOP_BENCH_DAEMON:-$repo_root/target/release/coop}"
+perry="${COOP_BENCH_PERRY:-$repo_root/.perry-main/target/perry-dev/perry}"
+provider_verification="${COOP_BENCH_PROVIDER_VERIFICATION:-full_hash}"
+gc_reclaim_check_interval="${COOP_BENCH_GC_RECLAIM_CHECK_INTERVAL:-0}"
+gc_reclaim_growth_bytes="${COOP_BENCH_GC_RECLAIM_GROWTH_BYTES:-262144}"
 
 case "$(uname -s)" in
   Darwin) extension="dylib" ;;
   Linux) extension="so" ;;
   *) echo "unsupported benchmark host: $(uname -s)" >&2; exit 1 ;;
 esac
-runtime="${PERCH_BENCH_RUNTIME:-$repo_root/var/perch/lib/libperry_runtime.$extension}"
-stdlib="${PERCH_BENCH_STDLIB:-$repo_root/var/perch/lib/libperry_stdlib.$extension}"
+runtime="${COOP_BENCH_RUNTIME:-$repo_root/var/coop/lib/libperry_runtime.$extension}"
+stdlib="${COOP_BENCH_STDLIB:-$repo_root/var/coop/lib/libperry_stdlib.$extension}"
 
 for required in \
   "$daemon" \
@@ -37,7 +37,7 @@ mkdir -p \
   "$fixture_root/storage" \
   "$fixture_root/logs" \
   "$fixture_root/acme"
-cp "$repo_root/benchmarks/tiny-perry/perch.toml" "$deployment/perch.toml"
+cp "$repo_root/benchmarks/tiny-perry/coop.toml" "$deployment/coop.toml"
 cp "$repo_root/benchmarks/tiny-perry/handlers/main.ts" "$deployment/handlers/main.ts"
 
 runtime_config="$fixture_root/runtime.toml"
@@ -79,14 +79,14 @@ trap cleanup EXIT INT TERM
 for _ in $(seq 1 240); do
   if grep -Fq 'HTTP listener ready' "$log_file"; then
     app="$(find "$compiled/test1" -mindepth 2 -maxdepth 2 -type f -name "app.$extension" -print -quit 2>/dev/null || true)"
-    if [[ -n "$app" && -f "${app%.$extension}.perch-lib.json" ]]; then
+    if [[ -n "$app" && -f "${app%.$extension}.coop-lib.json" ]]; then
       echo "Prepared $app"
       exit 0
     fi
   fi
   if ! kill -0 "$daemon_pid" 2>/dev/null; then
     cat "$log_file" >&2
-    echo "Perch exited before preparing the benchmark fixture" >&2
+    echo "Coop exited before preparing the benchmark fixture" >&2
     exit 1
   fi
   sleep 0.25

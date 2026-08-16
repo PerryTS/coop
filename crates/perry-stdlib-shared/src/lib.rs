@@ -27,14 +27,14 @@ static PIN_STDLIB: extern "C" fn() -> i32 = perry_stdlib::common::js_stdlib_proc
 /// Packaging assertion: after runtime-first loading this must equal the
 /// `js_gc_init` address returned from `libperry_runtime`.
 #[no_mangle]
-pub extern "C" fn perch_stdlib_runtime_probe() -> usize {
+pub extern "C" fn coop_stdlib_runtime_probe() -> usize {
     js_gc_init as *const () as usize
 }
 
 /// Synchronous, host-owned queue enqueue callback. It is installed once by
-/// Perch before any application is initialized. The current deployment is a
+/// Coop before any application is initialized. The current deployment is a
 /// host-assigned opaque ID held in executor TLS, never an application string.
-pub type PerchQueueEnqueueCallback = unsafe extern "C" fn(
+pub type CoopQueueEnqueueCallback = unsafe extern "C" fn(
     deployment_id: u64,
     queue: *const u8,
     queue_len: usize,
@@ -43,17 +43,17 @@ pub type PerchQueueEnqueueCallback = unsafe extern "C" fn(
     delay_ms: u64,
 ) -> i32;
 
-static QUEUE_ENQUEUE_CALLBACK: OnceLock<PerchQueueEnqueueCallback> = OnceLock::new();
+static QUEUE_ENQUEUE_CALLBACK: OnceLock<CoopQueueEnqueueCallback> = OnceLock::new();
 
 thread_local! {
     static DEPLOYMENT_CONTEXT: Cell<u64> = const { Cell::new(0) };
 }
 
-/// Register the process-wide Perch queue gateway. Repeated registration is
+/// Register the process-wide Coop queue gateway. Repeated registration is
 /// accepted only for the exact same function pointer.
 #[no_mangle]
-pub extern "C" fn perch_host_register_queue_enqueue_callback(
-    callback: PerchQueueEnqueueCallback,
+pub extern "C" fn coop_host_register_queue_enqueue_callback(
+    callback: CoopQueueEnqueueCallback,
 ) -> i32 {
     if let Some(existing) = QUEUE_ENQUEUE_CALLBACK.get() {
         return i32::from(std::ptr::fn_addr_eq(*existing, callback));
@@ -63,20 +63,20 @@ pub extern "C" fn perch_host_register_queue_enqueue_callback(
 
 /// Set the opaque deployment identity on one Perry executor thread.
 #[no_mangle]
-pub extern "C" fn perch_host_set_deployment_context(deployment_id: u64) {
+pub extern "C" fn coop_host_set_deployment_context(deployment_id: u64) {
     DEPLOYMENT_CONTEXT.with(|current| current.set(deployment_id));
 }
 
 /// Clear the deployment identity before tearing down executor TLS.
 #[no_mangle]
-pub extern "C" fn perch_host_clear_deployment_context() {
+pub extern "C" fn coop_host_clear_deployment_context() {
     DEPLOYMENT_CONTEXT.with(|current| current.set(0));
 }
 
 /// Provider entry called by the tiny application-linked wrapper. String
 /// contents are copied/consumed synchronously before returning.
 #[no_mangle]
-pub unsafe extern "C" fn js_perch_queue_enqueue(
+pub unsafe extern "C" fn js_coop_queue_enqueue(
     queue: *const StringHeader,
     payload: *const StringHeader,
     delay_ms: u64,
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn js_perch_queue_enqueue(
 /// descriptor lowers one Buffer argument to these pointer/length slots, so no
 /// JSON or Base64 transform occurs on the application/provider boundary.
 #[no_mangle]
-pub unsafe extern "C" fn js_perch_queue_enqueue_raw(
+pub unsafe extern "C" fn js_coop_queue_enqueue_raw(
     queue: *const StringHeader,
     payload: *const u8,
     payload_len: usize,

@@ -1,15 +1,15 @@
 {
-  "name": "perch-test8",
+  "name": "coop-test8",
   "version": "0.1.0",
-  "description": "Postgres stress test deployment — uses @perry/postgres via @perch/runtime",
+  "description": "Postgres stress test deployment — uses @perry/postgres via @coop/runtime",
   "private": true,
   "dependencies": {
-    "@perch/runtime": "file:../../../packages/perch-runtime",
+    "@coop/runtime": "file:../../../packages/coop-runtime",
     "@perry/postgres": "file:/Users/amlug/projects/perry/postgres"
   },
   "perry": {
     "compilePackages": [
-      "@perch/runtime",
+      "@coop/runtime",
       "@perry/postgres"
     ]
   }

@@ -1,0 +1,13 @@
+name = "test6"
+version = "0.1.0"
+
+# Test 6: string processing — splits, joins, replaces.
+# Stresses Perry's string runtime.
+
+[hosts]
+domains = ["coop-test6.perryts.com"]
+
+[[handlers]]
+file = "handlers/main.ts"
+path = "/"
+method = "GET"

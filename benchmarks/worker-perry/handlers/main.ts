@@ -2,7 +2,7 @@ type FrameCursor = { frame: Buffer; offset: number };
 
 function readU32(cursor: FrameCursor): number {
   if (cursor.offset + 4 > cursor.frame.length) {
-    throw new Error("truncated PCH2 length");
+    throw new Error("truncated COOP length");
   }
   const value = cursor.frame.readUInt32BE(cursor.offset);
   cursor.offset += 4;
@@ -12,7 +12,7 @@ function readU32(cursor: FrameCursor): number {
 function readText(cursor: FrameCursor): string {
   const length = readU32(cursor);
   if (cursor.offset + length > cursor.frame.length) {
-    throw new Error("truncated PCH2 field");
+    throw new Error("truncated COOP field");
   }
   const value = cursor.frame.toString("utf8", cursor.offset, cursor.offset + length);
   cursor.offset += length;
@@ -78,7 +78,7 @@ export function handle(frame: Buffer): Buffer {
     frame[3] !== 0x32 ||
     frame[4] !== 1
   ) {
-    throw new Error("invalid PCH2 HTTP request");
+    throw new Error("invalid COOP HTTP request");
   }
 
   const cursor: FrameCursor = { frame, offset: 5 };
@@ -96,7 +96,7 @@ export function handle(frame: Buffer): Buffer {
   const bodyLength = readU32(cursor);
   cursor.offset += bodyLength;
   if (cursor.offset !== frame.length) {
-    throw new Error("trailing or truncated PCH2 bytes");
+    throw new Error("trailing or truncated COOP bytes");
   }
   return responseFrame(benchmarkBody(query));
 }

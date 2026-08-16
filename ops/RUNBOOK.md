@@ -1,20 +1,20 @@
-# Perch alert runbook
+# Coop alert runbook
 
 This runbook maps one-to-one to the alerts in
-[`prometheus/perch-rules.yml`](prometheus/perch-rules.yml). Alertmanager routing
+[`prometheus/coop-rules.yml`](prometheus/coop-rules.yml). Alertmanager routing
 belongs to the environment: route `severity="critical"` to the primary on-call
 and `severity="warning"` to the service owner, with deployment, shard slot,
 queue, and operation labels preserved. Never attach request bodies, queue
 payloads, credentials, or database URLs to alerts.
 
-Start every investigation by recording the Perch/Perry build identity, host,
+Start every investigation by recording the Coop/Perry build identity, host,
 deployment package identity, alert start time, recent deployment operation,
 and relevant Grafana panel. Use the authenticated deployment health, memory,
 and artifact endpoints when the alert carries a deployment label. Prefer a
 verified rollback or removal of new traffic over editing immutable packages or
 queue rows by hand.
 
-## PerchMetricSurfaceMissing
+## CoopMetricSurfaceMissing
 
 - Confirm the scrape target and `/metrics` endpoint independently of the
   application listener, then distinguish daemon absence from scrape failure.
@@ -23,7 +23,7 @@ queue rows by hand.
 - Restore the last verified daemon/configuration. Escalate immediately if the
   process will not remain ready or provider verification fails.
 
-## PerchHttpErrorRateHigh
+## CoopHttpErrorRateHigh
 
 - Break down status, latency, admission, deadline, and worker-restart panels for
   the labeled deployment; compare the alert start with its active package.
@@ -32,7 +32,7 @@ queue rows by hand.
 - If every deployment is affected, investigate provider, daemon, database, and
   host capacity before changing application code.
 
-## PerchExecutorQueueSaturated
+## CoopExecutorQueueSaturated
 
 - Compare queue depth/capacity with admitted concurrency, latency, timeouts,
   CPU, and application arena growth.
@@ -41,7 +41,7 @@ queue rows by hand.
 - Move untrusted or blocking work to dedicated isolation and profile the slow
   entry point before changing the production limit.
 
-## PerchWorkerTransportBacklogged
+## CoopWorkerTransportBacklogged
 
 - Check the deployment's worker PID/generation, transport poison count,
   timeouts, protocol throughput, and executor queue.
@@ -51,7 +51,7 @@ queue rows by hand.
 - If replacement repeats, drain traffic and inspect worker stderr/cgroup events
   before retrying another generation.
 
-## PerchWorkerTransportCancelledActive
+## CoopWorkerTransportCancelledActive
 
 - Treat this as an uncertain protocol exchange. Confirm the exact worker or
   shard generation was poisoned and replaced; do not reuse its connection.
@@ -60,7 +60,7 @@ queue rows by hand.
 - For a shard, verify every resident deployment recovered because the complete
   failure domain is retired after uncertain framing.
 
-## PerchAdmissionRejections
+## CoopAdmissionRejections
 
 - Split by entry point and reason, then compare admitted concurrency with
   executor and worker-transport occupancy.
@@ -69,7 +69,7 @@ queue rows by hand.
 - Apply upstream backpressure or reduce per-request work before increasing a
   bound; retain memory and tail-latency measurements for any limit change.
 
-## PerchInvocationTimeouts
+## CoopInvocationTimeouts
 
 - Identify trusted, dedicated, or sharded isolation before acting. Trusted
   native work cannot be safely hard-preempted and retains its admission permit.
@@ -78,7 +78,7 @@ queue rows by hand.
 - Drain traffic if recovery does not converge, then inspect the timed-out entry
   point, cgroup events, poison reason, and immediate successor generation.
 
-## PerchActivationUnhealthy
+## CoopActivationUnhealthy
 
 - Read the deployment health endpoint for probe path, expected/actual status,
   request count, duration, and completion time.
@@ -87,7 +87,7 @@ queue rows by hand.
 - Roll back only to a retained package that passes integrity verification and
   the same eager activation contract.
 
-## PerchWorkerCrashLoop
+## CoopWorkerCrashLoop
 
 - Inspect restart reasons, worker stderr, exit status, cgroup OOM/PID events,
   package identity, and the first failed generation.
@@ -95,7 +95,7 @@ queue rows by hand.
 - Roll back a new package when failures align with activation; otherwise
   isolate the app and preserve the failing artifact and logs for diagnosis.
 
-## PerchShardFailure
+## CoopShardFailure
 
 - List every deployment and runtime ID resident in the labeled slot/generation;
   verify all are moved together to one healthy successor generation.
@@ -103,7 +103,7 @@ queue rows by hand.
 - Repeated failures require draining that shard and moving suspect applications
   to dedicated isolation before resuming normal placement.
 
-## PerchWorkerOomKilled
+## CoopWorkerOomKilled
 
 - Read `memory.current`, `memory.events`, peak memory, PID count, and the
   deployment/shard arena and response-size panels for the failed generation.
@@ -112,7 +112,7 @@ queue rows by hand.
 - Roll back or isolate the workload; change a limit only with retained PSS,
   cgroup peak, latency, and error evidence.
 
-## PerchQueueBacklogOld
+## CoopQueueBacklogOld
 
 - Check visible, leased, retry-scheduled, and dead-letter counts plus oldest
   age, active consumer generation, admission deferrals, and delivery outcomes.
@@ -121,7 +121,7 @@ queue rows by hand.
 - Preserve at-least-once semantics: do not manually delete or acknowledge rows
   to clear the alert.
 
-## PerchQueuePoolSaturated
+## CoopQueuePoolSaturated
 
 - Compare maximum, open, available, checked-out utilization, and waiter count;
   correlate with database latency/errors and deployment queue concurrency.
@@ -129,7 +129,7 @@ queue rows by hand.
   pool size. Increasing it can transfer overload to the database.
 - Verify pool reconnect and waiter recovery after remediation.
 
-## PerchQueueDeadLetters
+## CoopQueueDeadLetters
 
 - Use the authenticated metadata-only DLQ listing to identify deployment,
   queue, attempts, and failure timing without exposing payloads.
@@ -138,7 +138,7 @@ queue rows by hand.
 - Purge only under the application's data-retention procedure with an operator
   record; DLQ presence is not itself permission to discard work.
 
-## PerchQueueStoreErrors
+## CoopQueueStoreErrors
 
 - Break down by operation and correlate with pool state, PostgreSQL health,
   connection replacement, schema/version, and network events.
@@ -147,7 +147,7 @@ queue rows by hand.
 - Restore database service/connectivity, then verify reconnect, lease recovery,
   and delivery before clearing the incident.
 
-## PerchRollbackFailed
+## CoopRollbackFailed
 
 - Inspect the requested package, integrity/config/static verification result,
   activation probe, and current active/previous state.
@@ -156,7 +156,7 @@ queue rows by hand.
 - Select another verified retained generation or deploy a fixed candidate; if
   state integrity is uncertain, stop mutation and preserve the artifact tree.
 
-## PerchArtifactCollectionFailed
+## CoopArtifactCollectionFailed
 
 - Inspect the deployment namespace, active/previous/live pins, retention
   policy, filesystem capacity/permissions, and rejected symlink or malformed

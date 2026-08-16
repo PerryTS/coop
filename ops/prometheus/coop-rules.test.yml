@@ -1,0 +1,151 @@
+rule_files:
+  - coop-rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: http errors require both ratio and request volume
+    interval: 1m
+    input_series:
+      - series: 'coop_requests_total{deployment="busy",status="200"}'
+        values: '0+60x20'
+      - series: 'coop_requests_total{deployment="busy",status="500"}'
+        values: '0+6x20'
+      - series: 'coop_requests_total{deployment="quiet",status="500"}'
+        values: '0+0.01x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: CoopHttpErrorRateHigh
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: CoopHttpErrorRateHigh
+        exp_alerts:
+          - exp_labels:
+              alertname: CoopHttpErrorRateHigh
+              deployment: busy
+              severity: warning
+            exp_annotations:
+              summary: Coop HTTP error ratio is high
+              description: Deployment busy has exceeded 5% HTTP 5xx responses for ten minutes.
+              runbook: ops/RUNBOOK.md#coophttperrorratehigh
+
+  - name: executor saturation respects its hold duration
+    interval: 1m
+    input_series:
+      - series: 'coop_executor_queue_depth{deployment="app"}'
+        values: '10x20'
+      - series: 'coop_executor_queue_capacity{deployment="app"}'
+        values: '10x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: CoopExecutorQueueSaturated
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: CoopExecutorQueueSaturated
+        exp_alerts:
+          - exp_labels:
+              alertname: CoopExecutorQueueSaturated
+              deployment: app
+              severity: warning
+            exp_annotations:
+              summary: Coop executor queue is saturated
+              description: Deployment app has remained above 90% executor queue use for ten minutes.
+              runbook: ops/RUNBOOK.md#coopexecutorqueuesaturated
+
+  - name: active transport cancellation alerts immediately
+    interval: 1m
+    input_series:
+      - series: 'coop_worker_transport_cancellations_total{deployment="app",entrypoint="http",phase="active",cause="future_dropped"}'
+        values: '0 0 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: CoopWorkerTransportCancelledActive
+        exp_alerts:
+          - exp_labels:
+              alertname: CoopWorkerTransportCancelledActive
+              deployment: app
+              entrypoint: http
+              severity: critical
+            exp_annotations:
+              summary: An active Coop worker exchange was cancelled
+              description: Deployment app dropped an active http exchange; its ordered connection has been poisoned and must be replaced.
+              runbook: ops/RUNBOOK.md#coopworkertransportcancelledactive
+
+  - name: worker crash loop starts on its third restart
+    interval: 1m
+    input_series:
+      - series: 'coop_worker_restarts_total{deployment="app",reason="exit"}'
+        values: '0 1 2 3 3 3'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: CoopWorkerCrashLoop
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: CoopWorkerCrashLoop
+        exp_alerts:
+          - exp_labels:
+              alertname: CoopWorkerCrashLoop
+              deployment: app
+              severity: critical
+            exp_annotations:
+              summary: Coop worker is restarting repeatedly
+              description: Deployment app restarted at least three times in ten minutes.
+              runbook: ops/RUNBOOK.md#coopworkercrashloop
+
+  - name: queue pool waiters sustain saturation alert
+    interval: 1m
+    input_series:
+      - series: 'coop_queue_pool_utilization_ratio'
+        values: '0.5x10'
+      - series: 'coop_queue_pool_waiters'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: CoopQueuePoolSaturated
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: CoopQueuePoolSaturated
+        exp_alerts:
+          - exp_labels:
+              alertname: CoopQueuePoolSaturated
+              severity: warning
+            exp_annotations:
+              summary: Coop durable-queue connection pool is saturated
+              description: The shared queue pool has remained above 90% checked-out capacity or has waiting borrowers for five minutes.
+              runbook: ops/RUNBOOK.md#coopqueuepoolsaturated
+
+  - name: queue store errors preserve operation label
+    interval: 1m
+    input_series:
+      - series: 'coop_queue_store_errors_total{operation="claim"}'
+        values: '0 0 1 1 1'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: CoopQueueStoreErrors
+        exp_alerts:
+          - exp_labels:
+              alertname: CoopQueueStoreErrors
+              operation: claim
+              severity: critical
+            exp_annotations:
+              summary: Coop durable queue store failed
+              description: Queue-store operation claim failed 1 times in five minutes.
+              runbook: ops/RUNBOOK.md#coopqueuestoreerrors
+
+  - name: rollback failure preserves deployment label
+    interval: 1m
+    input_series:
+      - series: 'coop_deployment_rollbacks_total{deployment="app",outcome="failure"}'
+        values: '0 1 1 1'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: CoopRollbackFailed
+        exp_alerts:
+          - exp_labels:
+              alertname: CoopRollbackFailed
+              deployment: app
+              severity: critical
+            exp_annotations:
+              summary: Coop deployment rollback failed
+              description: Deployment app failed a rollback in the last 15 minutes.
+              runbook: ops/RUNBOOK.md#cooprollbackfailed

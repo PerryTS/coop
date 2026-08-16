@@ -1,6 +1,6 @@
 # The TypeScript subset
 
-Perch runs whatever [Perry](https://github.com/PerryTS/perry) compiles. That is a
+Coop runs whatever [Perry](https://github.com/PerryTS/perry) compiles. That is a
 large and growing subset of TypeScript, but it is a subset, and this is the
 single biggest thing to establish before planning a migration.
 
@@ -10,21 +10,21 @@ If it type-checks under `tsc`, that tells you nothing about whether it compiles
 under Perry. Compile early, compile the real dependency tree, and do it before
 designing around a library.
 
-## What Perch additionally requires
+## What Coop additionally requires
 
-Beyond Perry's own constraints, a Perch deployment must:
+Beyond Perry's own constraints, a Coop deployment must:
 
 - **Export a `handle` function** from each file named in a `[[handlers]]` entry.
-- **Take and return the ABI's type** — `string` for the `@perch/runtime` form,
-  `Buffer` for the raw [`PCH2`](host-abi.md) form. Explicitly string-typed
+- **Take and return the ABI's type** — `string` for the `@coop/runtime` form,
+  `Buffer` for the raw [`COOP`](host-abi.md) form. Explicitly string-typed
   handlers are rejected by the compiler when the binary ABI is expected.
-- **Import only from the allowlist** — `@perch/runtime` and the Perry standard
+- **Import only from the allowlist** — `@coop/runtime` and the Perry standard
   library surface. There is no route from application code to arbitrary native
   modules.
 
 ## Why the restriction exists
 
-It is not incidental. Perch treats the compiler as its primary isolation
+It is not incidental. Coop treats the compiler as its primary isolation
 boundary (see [Architecture](architecture.md)). The absence of `eval`, dynamic
 `Function` construction, and arbitrary native imports is what makes "application
 code cannot reach outside the surface it was compiled for" a static property

@@ -2,11 +2,11 @@
 
 [Introduction](intro.md)
 
-# Using Perch
+# Using Coop
 
 - [Quick start](quickstart.md)
-- [`perch.toml` reference](perch-toml.md)
-- [The `@perch/runtime` API](runtime-api.md)
+- [`coop.toml` reference](coop-toml.md)
+- [The `@coop/runtime` API](runtime-api.md)
 - [The TypeScript subset](subset.md)
 
 # How it works

@@ -26,7 +26,7 @@ for command_name in cmp install jq mktemp readlink sha256sum stat; do
 done
 
 source_dir="$(readlink -f -- "$1")"
-destination_root="${2:-/opt/perch/providers}"
+destination_root="${2:-/opt/coop/providers}"
 if [[ "$destination_root" != /* ]]; then
   echo "destination root must be absolute" >&2
   exit 64

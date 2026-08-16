@@ -1,0 +1,52 @@
+[package]
+name = "coop-worker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Per-deployment host process: dlopens the deployment dylib and dispatches daemon-forwarded requests"
+
+[[bin]]
+name = "coop-worker"
+path = "src/main.rs"
+
+[lib]
+name = "coop_app_host"
+path = "src/lib.rs"
+
+[dependencies]
+coop-host-abi = { workspace = true }
+
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono = "0.4"
+nanoid = "0.4"
+deadpool-postgres = "0.14.1"
+tokio-postgres = "0.7.18"
+
+# For building DeploymentRequest/Response body base64
+base64 = "0.22"
+
+# dlopen/dlsym for v0.5 direct-call model
+libc = "0.2"
+
+# Cron scheduling
+cron = "0.12"
+
+# Config parsing (reads deployment's coop.toml for cron/queue config)
+toml = "0.8"
+
+# CLI parsing
+clap = { version = "4", features = ["derive", "env"] }
+
+[profile.release]
+# Worker-specific overrides if needed
+
+[dev-dependencies]
+tempfile = "3"

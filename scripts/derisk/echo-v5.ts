@@ -1,5 +1,5 @@
 // v0.5 shape: just a plain export, no plugin API. Perry compiles this to
-// _perry_fn_echo_v5_ts__handle (exported symbol). perch-worker dlopens and
+// _perry_fn_echo_v5_ts__handle (exported symbol). coop-worker dlopens and
 // calls it directly via dlsym.
 //
 // The function takes a JSON string (the DeploymentRequest), parses it,

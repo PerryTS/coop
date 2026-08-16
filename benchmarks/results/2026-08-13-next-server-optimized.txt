@@ -1,7 +1,7 @@
 Optimization rerun, Apple M1 Max, macOS 26.5, 2026-08-13
 
 Changes under test:
-- compact PCH2 Buffer request/response ABI (no JSON/Base64 in-process)
+- compact COOP Buffer request/response ABI (no JSON/Base64 in-process)
 - three-symbol Next app export allowlist
 - SHA-256-bound deployment-time library audit
 - startup and exponentially sampled dispatch phase telemetry
@@ -11,10 +11,10 @@ The machine was under still heavier unrelated load than the original run:
 load1 was 78.57-81.33 for the final three trials. Wall-clock throughput and
 latency are therefore directional. CPU/request and RSS are more useful.
 
-sample name="Perch optimized Next API lower bound final" trial=1 load1_start=77.14 load1_end=78.57 startup_ms=356.866 startup_cpu_ms=190.000 ready_rss_mib=36.875 first_request_ms=8.641 usable_cold_start_ms=365.507 first_request_cpu_ms=0.000 warm_rss_mib=40.031 requests=2000 workload_ms=1340.421 requests_per_second=1492.068 latency_p50_ms=5.133 latency_p99_ms=67.390 server_cpu_us_per_request=305.000 post_rss_mib=95.031
-sample name="Perch optimized Next API lower bound final" trial=2 load1_start=78.57 load1_end=81.33 startup_ms=374.238 startup_cpu_ms=200.000 ready_rss_mib=36.906 first_request_ms=2.208 usable_cold_start_ms=376.445 first_request_cpu_ms=0.000 warm_rss_mib=40.063 requests=2000 workload_ms=1430.978 requests_per_second=1397.645 latency_p50_ms=6.525 latency_p99_ms=61.280 server_cpu_us_per_request=300.000 post_rss_mib=95.031
-sample name="Perch optimized Next API lower bound final" trial=3 load1_start=81.33 load1_end=81.33 startup_ms=349.842 startup_cpu_ms=210.000 ready_rss_mib=36.953 first_request_ms=2.848 usable_cold_start_ms=352.691 first_request_cpu_ms=0.000 warm_rss_mib=40.047 requests=2000 workload_ms=1303.261 requests_per_second=1534.612 latency_p50_ms=5.177 latency_p99_ms=88.302 server_cpu_us_per_request=300.000 post_rss_mib=94.063
-RESULT name="Perch optimized Next API lower bound final" trials=3 load1_start_median=78.57 load1_end_median=81.33 startup_median_ms=356.866 startup_cpu_median_ms=200.000 ready_rss_median_mib=36.906 first_request_median_ms=2.848 usable_cold_start_median_ms=365.507 first_request_cpu_median_ms=0.000 warm_rss_median_mib=40.047 requests=2000 concurrency=20 workload_median_ms=1340.421 requests_per_second=1492.068 latency_p50_median_ms=5.177 latency_p99_median_ms=67.390 server_cpu_us_per_request=300.000 post_rss_median_mib=95.031
+sample name="Coop optimized Next API lower bound final" trial=1 load1_start=77.14 load1_end=78.57 startup_ms=356.866 startup_cpu_ms=190.000 ready_rss_mib=36.875 first_request_ms=8.641 usable_cold_start_ms=365.507 first_request_cpu_ms=0.000 warm_rss_mib=40.031 requests=2000 workload_ms=1340.421 requests_per_second=1492.068 latency_p50_ms=5.133 latency_p99_ms=67.390 server_cpu_us_per_request=305.000 post_rss_mib=95.031
+sample name="Coop optimized Next API lower bound final" trial=2 load1_start=78.57 load1_end=81.33 startup_ms=374.238 startup_cpu_ms=200.000 ready_rss_mib=36.906 first_request_ms=2.208 usable_cold_start_ms=376.445 first_request_cpu_ms=0.000 warm_rss_mib=40.063 requests=2000 workload_ms=1430.978 requests_per_second=1397.645 latency_p50_ms=6.525 latency_p99_ms=61.280 server_cpu_us_per_request=300.000 post_rss_mib=95.031
+sample name="Coop optimized Next API lower bound final" trial=3 load1_start=81.33 load1_end=81.33 startup_ms=349.842 startup_cpu_ms=210.000 ready_rss_mib=36.953 first_request_ms=2.848 usable_cold_start_ms=352.691 first_request_cpu_ms=0.000 warm_rss_mib=40.047 requests=2000 workload_ms=1303.261 requests_per_second=1534.612 latency_p50_ms=5.177 latency_p99_ms=88.302 server_cpu_us_per_request=300.000 post_rss_mib=94.063
+RESULT name="Coop optimized Next API lower bound final" trials=3 load1_start_median=78.57 load1_end_median=81.33 startup_median_ms=356.866 startup_cpu_median_ms=200.000 ready_rss_median_mib=36.906 first_request_median_ms=2.848 usable_cold_start_median_ms=365.507 first_request_cpu_median_ms=0.000 warm_rss_median_mib=40.047 requests=2000 concurrency=20 workload_median_ms=1340.421 requests_per_second=1492.068 latency_p50_median_ms=5.177 latency_p99_median_ms=67.390 server_cpu_us_per_request=300.000 post_rss_median_mib=95.031
 
 Representative cached startup phases for the 4.2 MiB Next app:
 - runtime provider manifest: 0.12 ms
@@ -26,8 +26,8 @@ Representative cached startup phases for the 4.2 MiB Next app:
 - app module initialization: 49.52 ms in this sample
 
 The app exports exactly:
-- __perry_wrap_perry_fn_perch_perch_handler_ts__handle
-- __perry_wrap_perry_fn_perch_perch_handler_ts__handleBinary
+- __perry_wrap_perry_fn_coop_coop_handler_ts__handle
+- __perry_wrap_perry_fn_coop_coop_handler_ts__handleBinary
 - perry_module_init
 
 100 tiny app images, one trial under heavy load:
@@ -40,5 +40,5 @@ RESULT apps=100 startup_median_ms=29809.748 ready_rss_median_mib=121.688 warm_al
 Bounded parallel preload did not materially improve this macOS 100-image case;
 dyld eager relocation remains effectively serialized. A separate diagnostic
 loaded 20 tiny unique images in 6645 ms with RTLD_NOW versus 200 ms with
-RTLD_LAZY. Perch retains RTLD_NOW because lazy binding would move latency onto
+RTLD_LAZY. Coop retains RTLD_NOW because lazy binding would move latency onto
 the first request and violate the prewarmed execution contract.

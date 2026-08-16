@@ -20,20 +20,20 @@ import { setTimeout as delay } from "node:timers/promises";
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const options = parseArguments(process.argv.slice(2));
 const extension = process.platform === "darwin" ? "dylib" : "so";
-const perch = path.join(repository, "target", options.profile, "perch");
+const coop = path.join(repository, "target", options.profile, "coop");
 const perry = path.join(repository, ".perry-main", "target", "perry-dev", "perry");
-const runtimeProvider = path.join(repository, "var", "perch", "lib", `libperry_runtime.${extension}`);
-const stdlibProvider = path.join(repository, "var", "perch", "lib", `libperry_stdlib.${extension}`);
+const runtimeProvider = path.join(repository, "var", "coop", "lib", `libperry_runtime.${extension}`);
+const stdlibProvider = path.join(repository, "var", "coop", "lib", `libperry_stdlib.${extension}`);
 
-for (const required of [perch, perry, runtimeProvider, stdlibProvider]) {
+for (const required of [coop, perry, runtimeProvider, stdlibProvider]) {
   if (!existsSync(required)) {
-    throw new Error(`missing ${required}; build Perch and the pinned Perry providers first`);
+    throw new Error(`missing ${required}; build Coop and the pinned Perry providers first`);
   }
 }
 
 const trials = [];
 for (let trial = 1; trial <= options.trials; trial += 1) {
-  const root = mkdtempSync(path.join(os.tmpdir(), "perch-compile-benchmark-"));
+  const root = mkdtempSync(path.join(os.tmpdir(), "coop-compile-benchmark-"));
   try {
     const result = await runTrial(root, trial);
     trials.push(result);
@@ -76,7 +76,7 @@ async function runTrial(root, trial) {
   const config = path.join(root, "runtime.toml");
   writeFileSync(config, runtimeConfig(paths, root, port));
 
-  const child = spawn(perch, ["--config", config], {
+  const child = spawn(coop, ["--config", config], {
     cwd: repository,
     detached: true,
     env: { ...process.env, RUST_LOG: "info" },
@@ -144,7 +144,7 @@ async function runTrial(root, trial) {
       "dep-v2:source-v2",
     ));
 
-    const artifactState = await fetchAdminJson(port, "/_perch/admin/deployments/compile-small/artifacts");
+    const artifactState = await fetchAdminJson(port, "/_coop/admin/deployments/compile-small/artifacts");
     const rollbackPackage = artifactState.previous?.[0];
     if (!rollbackPackage) throw new Error("artifact state did not expose a rollback package");
     scenarios.push(await adminAction(
@@ -171,7 +171,7 @@ async function runTrial(root, trial) {
 
 async function runReplacementSoak(child, readLog, port, deployment, compiled) {
   const logStart = readLog().length;
-  const baselineMemory = await fetchAdminJson(port, "/_perch/admin/deployments/compile-small/memory");
+  const baselineMemory = await fetchAdminJson(port, "/_coop/admin/deployments/compile-small/memory");
   const baseline = {
     ...resourceCheckpoint(child.pid, 0),
     arenaLiveBytes: baselineMemory.arena_live_bytes,
@@ -199,11 +199,11 @@ async function runReplacementSoak(child, readLog, port, deployment, compiled) {
   try {
     for (let cycle = 1; cycle <= options.soakCycles; cycle += 1) {
       writeFileSync(path.join(deployment, "public", "index.html"), `<h1>soak ${cycle}</h1>\n`);
-      const response = await fetch(`http://127.0.0.1:${port}/_perch/admin/deployments/compile-small/reload`, {
+      const response = await fetch(`http://127.0.0.1:${port}/_coop/admin/deployments/compile-small/reload`, {
         method: "POST",
         headers: {
-          authorization: `Basic ${Buffer.from("perch:test-secret").toString("base64")}`,
-          "x-perch-confirm": "reload",
+          authorization: `Basic ${Buffer.from("coop:test-secret").toString("base64")}`,
+          "x-coop-confirm": "reload",
         },
         signal: AbortSignal.timeout(options.timeoutMs),
       });
@@ -217,9 +217,9 @@ async function runReplacementSoak(child, readLog, port, deployment, compiled) {
         throw new Error(`replacement soak cycle ${cycle} published HTTP ${live.status} ${JSON.stringify(live.body)}`);
       }
       if (cycle % 10 === 0 || cycle === options.soakCycles) {
-        const artifactState = await fetchAdminJson(port, "/_perch/admin/deployments/compile-small/artifacts");
-        const health = await fetchAdminJson(port, "/_perch/admin/deployments/compile-small/health");
-        const memory = await fetchAdminJson(port, "/_perch/admin/deployments/compile-small/memory");
+        const artifactState = await fetchAdminJson(port, "/_coop/admin/deployments/compile-small/artifacts");
+        const health = await fetchAdminJson(port, "/_coop/admin/deployments/compile-small/health");
+        const memory = await fetchAdminJson(port, "/_coop/admin/deployments/compile-small/memory");
         if (artifactState.packages.length > 3) {
           throw new Error(`replacement soak retained ${artifactState.packages.length} packages at cycle ${cycle}`);
         }
@@ -241,7 +241,7 @@ async function runReplacementSoak(child, readLog, port, deployment, compiled) {
     await traffic;
   }
   await delay(100);
-  const finalMemory = await fetchAdminJson(port, "/_perch/admin/deployments/compile-small/memory");
+  const finalMemory = await fetchAdminJson(port, "/_coop/admin/deployments/compile-small/memory");
   const final = {
     ...resourceCheckpoint(child.pid, options.soakCycles),
     arenaLiveBytes: finalMemory.arena_live_bytes,
@@ -361,7 +361,7 @@ function linearSlope(samples, field) {
 async function fetchAdminJson(port, pathname) {
   const response = await fetch(`http://127.0.0.1:${port}${pathname}`, {
     headers: {
-      authorization: `Basic ${Buffer.from("perch:test-secret").toString("base64")}`,
+      authorization: `Basic ${Buffer.from("coop:test-secret").toString("base64")}`,
     },
     signal: AbortSignal.timeout(options.timeoutMs),
   });
@@ -375,11 +375,11 @@ async function adminAction(name, child, mutate, action, confirmation, readLog, p
   const logStart = readLog().length;
   const started = performance.now();
   const sampler = sampleProcessTree(child.pid);
-  const response = await fetch(`http://127.0.0.1:${port}/_perch/admin/deployments/compile-small/${action}`, {
+  const response = await fetch(`http://127.0.0.1:${port}/_coop/admin/deployments/compile-small/${action}`, {
     method: "POST",
     headers: {
-      authorization: `Basic ${Buffer.from("perch:test-secret").toString("base64")}`,
-      "x-perch-confirm": confirmation,
+      authorization: `Basic ${Buffer.from("coop:test-secret").toString("base64")}`,
+      "x-coop-confirm": confirmation,
     },
   });
   const responseBody = await response.text();
@@ -411,7 +411,7 @@ function createFixture(deployment) {
   mkdirSync(path.join(deployment, "handlers"), { recursive: true });
   mkdirSync(path.join(deployment, "public"), { recursive: true });
   mkdirSync(path.join(deployment, "node_modules", "bench-dep"), { recursive: true });
-  writeFileSync(path.join(deployment, "perch.toml"), `name = "compile-small"
+  writeFileSync(path.join(deployment, "coop.toml"), `name = "compile-small"
 
 [hosts]
 domains = ["compile-small.test"]
@@ -488,7 +488,7 @@ artifact_retention_days = 0
 mode = "off"
 
 [admin]
-path = "/_perch/admin"
+path = "/_coop/admin"
 password_hash = ${toml(passwordHash)}
 `;
 }

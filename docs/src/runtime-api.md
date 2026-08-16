@@ -1,12 +1,12 @@
-# The `@perch/runtime` API
+# The `@coop/runtime` API
 
-Handlers import from `@perch/runtime` (`packages/perch-runtime`).
+Handlers import from `@coop/runtime` (`packages/coop-runtime`).
 
 ```ts
 import {
-  PerchRequest, respond, redirect, jsonResponse, withCacheHeaders,
-  db, kv, storage, queue, secrets, log, perchFetch,
-} from "@perch/runtime";
+  CoopRequest, respond, redirect, jsonResponse, withCacheHeaders,
+  db, kv, storage, queue, secrets, log, coopFetch,
+} from "@coop/runtime";
 ```
 
 ## Implementation status
@@ -17,10 +17,10 @@ around a module:
 | module | status |
 |---|---|
 | `log` | **implemented** — structured lines to the worker's log stream |
-| `secrets` | **module implemented** — reads `PERCH_SECRET_<NAME>`, throws if unset. *Nothing in the host exports those variables yet*: `[capabilities] secrets` parses in `perch.toml` but is never read, and there is no secrets file format. |
-| `queue` | **implemented** — host-owned durable queue via `js_perch_queue_enqueue` |
-| `perchFetch` | **module implemented** — policy-wrapped outbound `fetch`. *Nothing in the host exports `PERCH_FETCH_ALLOWLIST` yet*, so the allowlist is empty and every domain is permitted. |
-| `db` | **module implemented** — connects via `PERCH_DB_URL`. *Nothing in the host exports that variable yet*; a deployment must get it into the worker's environment itself. |
+| `secrets` | **module implemented** — reads `COOP_SECRET_<NAME>`, throws if unset. *Nothing in the host exports those variables yet*: `[capabilities] secrets` parses in `coop.toml` but is never read, and there is no secrets file format. |
+| `queue` | **implemented** — host-owned durable queue via `js_coop_queue_enqueue` |
+| `coopFetch` | **module implemented** — policy-wrapped outbound `fetch`. *Nothing in the host exports `COOP_FETCH_ALLOWLIST` yet*, so the allowlist is empty and every domain is permitted. |
+| `db` | **module implemented** — connects via `COOP_DB_URL`. *Nothing in the host exports that variable yet*; a deployment must get it into the worker's environment itself. |
 | `kv` | **implemented** — Redis via Perry's `ioredis`, per-deployment key prefix |
 | `storage` | **implemented** — files under a per-deployment directory |
 
@@ -34,7 +34,7 @@ a message saying so, rather than silently sharing a keyspace or a directory.
 ## Request and response
 
 ```ts
-const req = new PerchRequest(reqJson);
+const req = new CoopRequest(reqJson);
 
 req.method            // string
 req.path              // string
@@ -57,7 +57,7 @@ A handler returns the string these produce:
 
 ```ts
 export function handle(reqJson: string): string {
-  const req = new PerchRequest(reqJson);
+  const req = new CoopRequest(reqJson);
   return jsonResponse(200, { path: req.path });
 }
 ```
@@ -82,16 +82,16 @@ const token = secrets.get("POSTMARK_TOKEN");
 `get` throws a descriptive error if the secret is not configured, rather than
 returning `undefined` — a missing credential should fail loudly at first use.
 
-The intended host side is that `perch-worker` decrypts the deployment's secrets
-file at startup and exports each as `PERCH_SECRET_<NAME>`. **That part does not
-exist yet.** `[capabilities] secrets` parses in `perch.toml` and is never read,
-there is no secrets file format, and no code anywhere sets a `PERCH_SECRET_*`
+The intended host side is that `coop-worker` decrypts the deployment's secrets
+file at startup and exports each as `COOP_SECRET_<NAME>`. **That part does not
+exist yet.** `[capabilities] secrets` parses in `coop.toml` and is never read,
+there is no secrets file format, and no code anywhere sets a `COOP_SECRET_*`
 variable — so today `secrets.get` throws for every name unless something outside
-Perch put the variable in the worker's environment.
+Coop put the variable in the worker's environment.
 
 ## `db`
 
-A query builder over the connection named by `PERCH_DB_URL`:
+A query builder over the connection named by `COOP_DB_URL`:
 
 ```ts
 const rows = db.table("subscribers")
@@ -104,8 +104,8 @@ const rows = db.table("subscribers")
 Available builder methods: `table`, `select`, `where`, `join`, `groupBy`,
 `orderBy`, `limit`, `offset`.
 
-Nothing in the daemon or the worker exports `PERCH_DB_URL` today — unlike
-`PERCH_REDIS_URL` and `PERCH_STORAGE_DIR`, which `perch-worker` derives and
+Nothing in the daemon or the worker exports `COOP_DB_URL` today — unlike
+`COOP_REDIS_URL` and `COOP_STORAGE_DIR`, which `coop-worker` derives and
 exports for a dedicated worker. Until it does, the variable has to reach the
 worker's environment some other way, or `db` throws on first use.
 
@@ -121,14 +121,14 @@ Enqueueing is host-owned: it calls into the worker rather than talking to a
 broker from application code, so the queue survives the application being
 recompiled or rolled back.
 
-## `perchFetch`
+## `coopFetch`
 
 A wrapper around `fetch` that applies the deployment's outbound policy. Use it
 instead of bare `fetch` so that egress stays attributable to a deployment.
 
-The allowlist comes from `PERCH_FETCH_ALLOWLIST`, which nothing exports yet, and
+The allowlist comes from `COOP_FETCH_ALLOWLIST`, which nothing exports yet, and
 an empty allowlist permits every domain. `[capabilities.fetch.allowlist]` parses
-in `perch.toml` but is not read. Treat this as retry and timeout handling today,
+in `coop.toml` but is not read. Treat this as retry and timeout handling today,
 not as an egress control.
 
 ## `kv`
@@ -146,8 +146,8 @@ Configure it with `[redis] url` in `runtime.toml`. The daemon passes that URL to
 the worker through the environment, so a password never reaches the process
 table.
 
-`kv` prefixes every key with `PERCH_REDIS_PREFIX`, which the worker derives from
-the deployment name as `perch:<name>:`. Deployments cannot address each other's
+`kv` prefixes every key with `COOP_REDIS_PREFIX`, which the worker derives from
+the deployment name as `coop:<name>:`. Deployments cannot address each other's
 keys because the prefix is injected by the host, not the application. The worker
 refuses to start a deployment whose name contains `:`, because that would make
 the prefix ambiguous — deployment `a` writing the literal key `b:x` would
@@ -181,7 +181,7 @@ const keys = await storage.list({ prefix: "uploads/", limit: 100 });
 ```
 
 Configure the box-wide root with `[paths] storage_dir` in `runtime.toml`. The
-worker creates and exports `<storage_dir>/<deployment>` as `PERCH_STORAGE_DIR`;
+worker creates and exports `<storage_dir>/<deployment>` as `COOP_STORAGE_DIR`;
 the application never sees the root, only keys under its own directory.
 
 Layout inside that directory:

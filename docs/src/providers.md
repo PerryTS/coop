@@ -1,6 +1,6 @@
 # Shared runtime providers
 
-This is the mechanism that makes Perch more than "compile each app to a binary".
+This is the mechanism that makes Coop more than "compile each app to a binary".
 
 ## The model
 
@@ -12,7 +12,7 @@ libraries:
 
 Each application is compiled as an **app-only dylib** that resolves against that
 ABI instead of embedding its own runtime. The host (`provider-host`, or
-`perch-worker` in production) loads the providers first, then `dlopen`s the
+`coop-worker` in production) loads the providers first, then `dlopen`s the
 application and calls `perry_module_init`.
 
 ## Building the providers
@@ -27,10 +27,10 @@ What it actually does, because it is not obvious from the outside:
    (restored by a trap on exit, including on failure).
 2. Builds it with the symbol-suppression `stdlib` feature so the stdlib provider
    does not re-export the runtime's own surface.
-3. Links `perch-perry-stdlib-shared` — the cdylib in `crates/perry-stdlib-shared` —
+3. Links `coop-perry-stdlib-shared` — the cdylib in `crates/perry-stdlib-shared` —
    against that dylib.
 
-**Perch does not use `.a` archives.** Perry's own documentation tells you to
+**Coop does not use `.a` archives.** Perry's own documentation tells you to
 rebuild `perry-runtime-static` / `perry-stdlib-static` and check that the `.a`
 mtime moved. That advice does not apply here and will mislead you: the artifacts
 are `.dylib`/`.so`, and the right freshness check is the provider `sha256` plus
@@ -45,7 +45,7 @@ Each published application carries a manifest recording:
 - the target triple
 - the artifact's own `sha256` and size
 
-`perch-worker` verifies all of this before mapping the image, and **refuses to
+`coop-worker` verifies all of this before mapping the image, and **refuses to
 load on mismatch**:
 
 ```

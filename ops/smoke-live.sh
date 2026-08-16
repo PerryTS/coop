@@ -8,9 +8,9 @@ repository=$(cd "$ops_root/.." && pwd)
 : "${GRAFANA_BIN:?set GRAFANA_BIN to the Grafana binary}"
 : "${GRAFANA_HOME:?set GRAFANA_HOME to the Grafana share/home directory}"
 
-metrics_port=${PERCH_SMOKE_METRICS_PORT:-19101}
-prometheus_port=${PERCH_SMOKE_PROMETHEUS_PORT:-19090}
-grafana_port=${PERCH_SMOKE_GRAFANA_PORT:-13000}
+metrics_port=${COOP_SMOKE_METRICS_PORT:-19101}
+prometheus_port=${COOP_SMOKE_PROMETHEUS_PORT:-19090}
+grafana_port=${COOP_SMOKE_GRAFANA_PORT:-13000}
 
 for dependency in node curl jq sed seq; do
   command -v "$dependency" >/dev/null || {
@@ -29,7 +29,7 @@ done
   exit 1
 }
 
-smoke_tmp=$(mktemp -d "${TMPDIR:-/tmp}/perch-ops-smoke.XXXXXX")
+smoke_tmp=$(mktemp -d "${TMPDIR:-/tmp}/coop-ops-smoke.XXXXXX")
 fixture_pid=
 prometheus_pid=
 grafana_pid=
@@ -51,7 +51,7 @@ cleanup() {
     fi
   done
   case "$smoke_tmp" in
-    "${TMPDIR:-/tmp}"/perch-ops-smoke.*|/tmp/perch-ops-smoke.*)
+    "${TMPDIR:-/tmp}"/coop-ops-smoke.*|/tmp/coop-ops-smoke.*)
       rm -rf -- "$smoke_tmp"
       ;;
     *)
@@ -83,7 +83,7 @@ mkdir -p \
   "$smoke_tmp/provisioning/datasources" \
   "$smoke_tmp/provisioning/dashboards"
 
-escaped_rules=$(printf '%s' "$ops_root/prometheus/perch-rules.yml" | sed 's/[&|]/\\&/g')
+escaped_rules=$(printf '%s' "$ops_root/prometheus/coop-rules.yml" | sed 's/[&|]/\\&/g')
 escaped_dashboard=$(printf '%s' "$ops_root/grafana" | sed 's/[&|]/\\&/g')
 sed \
   -e "s|@RULES_PATH@|$escaped_rules|g" \
@@ -92,13 +92,13 @@ sed \
 sed \
   -e "s|@PROMETHEUS_PORT@|$prometheus_port|g" \
   "$ops_root/smoke/datasource.yml.in" \
-  >"$smoke_tmp/provisioning/datasources/perch.yml"
+  >"$smoke_tmp/provisioning/datasources/coop.yml"
 sed \
   -e "s|@DASHBOARD_PATH@|$escaped_dashboard|g" \
   "$ops_root/smoke/dashboard.yml.in" \
-  >"$smoke_tmp/provisioning/dashboards/perch.yml"
+  >"$smoke_tmp/provisioning/dashboards/coop.yml"
 
-PERCH_SMOKE_METRICS_PORT=$metrics_port \
+COOP_SMOKE_METRICS_PORT=$metrics_port \
   node "$ops_root/smoke/metrics-fixture.mjs" \
   >"$smoke_tmp/fixture.log" 2>&1 &
 fixture_pid=$!
@@ -116,14 +116,14 @@ wait_for_url "http://127.0.0.1:$prometheus_port/-/ready" "Prometheus"
 
 for _ in $(seq 1 100); do
   if curl --fail --silent --show-error \
-    "http://127.0.0.1:$prometheus_port/api/v1/query?query=perch_deployments_total" \
+    "http://127.0.0.1:$prometheus_port/api/v1/query?query=coop_deployments_total" \
     | jq -e '.status == "success" and (.data.result | length) == 1' >/dev/null; then
     break
   fi
   sleep 0.1
 done
 curl --fail --silent --show-error \
-  "http://127.0.0.1:$prometheus_port/api/v1/query?query=perch_deployments_total" \
+  "http://127.0.0.1:$prometheus_port/api/v1/query?query=coop_deployments_total" \
   | jq -e '.status == "success" and (.data.result | length) == 1' >/dev/null
 curl --fail --silent --show-error \
   "http://127.0.0.1:$prometheus_port/api/v1/rules" \
@@ -135,8 +135,8 @@ GF_PATHS_PLUGINS="$smoke_tmp/grafana-plugins" \
 GF_PATHS_PROVISIONING="$smoke_tmp/provisioning" \
 GF_SERVER_HTTP_ADDR=127.0.0.1 \
 GF_SERVER_HTTP_PORT=$grafana_port \
-GF_SECURITY_ADMIN_USER=perch-smoke \
-GF_SECURITY_ADMIN_PASSWORD=perch-smoke-password \
+GF_SECURITY_ADMIN_USER=coop-smoke \
+GF_SECURITY_ADMIN_PASSWORD=coop-smoke-password \
 GF_AUTH_ANONYMOUS_ENABLED=true \
 GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer \
 GF_USERS_ALLOW_SIGN_UP=false \
@@ -147,17 +147,17 @@ wait_for_url "http://127.0.0.1:$grafana_port/api/health" "Grafana"
 
 for _ in $(seq 1 100); do
   if curl --fail --silent --show-error \
-    "http://127.0.0.1:$grafana_port/api/search?query=Perch%20server%20overview" \
-    | jq -e 'any(.[]; .uid == "perch-server-overview")' >/dev/null; then
+    "http://127.0.0.1:$grafana_port/api/search?query=Coop%20server%20overview" \
+    | jq -e 'any(.[]; .uid == "coop-server-overview")' >/dev/null; then
     break
   fi
   sleep 0.1
 done
 curl --fail --silent --show-error \
-  "http://127.0.0.1:$grafana_port/api/search?query=Perch%20server%20overview" \
-  | jq -e 'any(.[]; .uid == "perch-server-overview")' >/dev/null
+  "http://127.0.0.1:$grafana_port/api/search?query=Coop%20server%20overview" \
+  | jq -e 'any(.[]; .uid == "coop-server-overview")' >/dev/null
 curl --fail --silent --show-error \
-  "http://127.0.0.1:$grafana_port/api/datasources/uid/perch-prometheus/health" \
+  "http://127.0.0.1:$grafana_port/api/datasources/uid/coop-prometheus/health" \
   | jq -e '.status == "OK" or .status == "success"' >/dev/null
 
-printf '{"prometheus_rules":22,"prometheus_series":1,"grafana_dashboard_uid":"perch-server-overview","grafana_datasource_uid":"perch-prometheus"}\n'
+printf '{"prometheus_rules":22,"prometheus_series":1,"grafana_dashboard_uid":"coop-server-overview","grafana_datasource_uid":"coop-prometheus"}\n'

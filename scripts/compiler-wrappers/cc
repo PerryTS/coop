@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -eu
 
-real_cc=${PERCH_REAL_CC:-/usr/bin/cc}
-exports_file=${PERCH_APP_EXPORTS_FILE:-}
-aliases_file=${PERCH_APP_ALIASES_FILE:-}
-runtime_library=${PERCH_PERRY_RUNTIME_LIBRARY:-}
-stdlib_library=${PERCH_PERRY_STDLIB_LIBRARY:-}
+real_cc=${COOP_REAL_CC:-/usr/bin/cc}
+exports_file=${COOP_APP_EXPORTS_FILE:-}
+aliases_file=${COOP_APP_ALIASES_FILE:-}
+runtime_library=${COOP_PERRY_RUNTIME_LIBRARY:-}
+stdlib_library=${COOP_PERRY_STDLIB_LIBRARY:-}
 is_shared=0
 
 for argument in "$@"; do
@@ -19,14 +19,14 @@ if [ "$is_shared" -eq 1 ] && [ -n "$exports_file" ]; then
     alias_args=()
     if [ -n "$aliases_file" ]; then
         if [ ! -f "$aliases_file" ]; then
-            echo "Perch app alias specification does not exist: $aliases_file" >&2
+            echo "Coop app alias specification does not exist: $aliases_file" >&2
             exit 1
         fi
 
         # Perry's internal wrapper names are derived from its recomputed
         # project root. A dependency symlink can therefore put an absolute
         # staging path in those names. Resolve each generated entry by its
-        # unique function suffix and publish a stable Perch-owned alias.
+        # unique function suffix and publish a stable Coop-owned alias.
         link_symbols=()
         for argument in "$@"; do
             case "$argument" in
@@ -49,7 +49,7 @@ if [ "$is_shared" -eq 1 ] && [ -n "$exports_file" ]; then
             [ -z "$stable" ] && continue
             case "$stable:$suffix" in
                 *[!A-Za-z0-9_:]*)
-                    echo "invalid Perch app alias specification: $stable -> $suffix" >&2
+                    echo "invalid Coop app alias specification: $stable -> $suffix" >&2
                     exit 1
                     ;;
             esac
@@ -64,7 +64,7 @@ if [ "$is_shared" -eq 1 ] && [ -n "$exports_file" ]; then
                 esac
             done
             if [ "$matches" -ne 1 ]; then
-                echo "Perch expected exactly one Perry wrapper ending in $suffix, found $matches" >&2
+                echo "Coop expected exactly one Perry wrapper ending in $suffix, found $matches" >&2
                 exit 1
             fi
             case "$platform" in
@@ -77,7 +77,7 @@ if [ "$is_shared" -eq 1 ] && [ -n "$exports_file" ]; then
     case "$platform" in
         Darwin)
             if [ -z "$runtime_library" ] || [ -z "$stdlib_library" ]; then
-                echo "Perch app link requires both Perry provider paths" >&2
+                echo "Coop app link requires both Perry provider paths" >&2
                 exit 1
             fi
 
@@ -116,7 +116,7 @@ if [ "$is_shared" -eq 1 ] && [ -n "$exports_file" ]; then
             ;;
         Linux)
             if [ -z "$runtime_library" ] || [ -z "$stdlib_library" ]; then
-                echo "Perch app link requires both Perry provider paths" >&2
+                echo "Coop app link requires both Perry provider paths" >&2
                 exit 1
             fi
             # GNU ld enables --as-needed in the Rust/Perry link. Keep both

@@ -22,5 +22,5 @@
     "**/*.ts",
     "**/*.tsx"
   ],
-  "exclude": ["node_modules", "perch"]
+  "exclude": ["node_modules", "coop"]
 }

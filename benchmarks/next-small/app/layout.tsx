@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Perch Next benchmark",
+  title: "Coop Next benchmark",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

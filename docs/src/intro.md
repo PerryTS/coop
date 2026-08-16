@@ -1,11 +1,11 @@
 # Introduction
 
-Perch runs TypeScript applications that have been compiled to native code by
+Coop runs TypeScript applications that have been compiled to native code by
 [Perry](https://github.com/PerryTS/perry).
 
 The distinguishing idea is not "compile TypeScript" — Perry does that. It is
 **where the runtime lives**. A Perry program normally links the language runtime
-and standard library into its own executable. Perch builds those once per box as
+and standard library into its own executable. Coop builds those once per box as
 shared libraries and compiles each application into a small dylib that resolves
 against them:
 
@@ -32,7 +32,7 @@ for a language runtime per service.
 
 ## What this is not
 
-Perch is deliberately not a Kubernetes replacement, a multi-region platform, or
+Coop is deliberately not a Kubernetes replacement, a multi-region platform, or
 a general-purpose Node host. It targets one box, one operator, and a portfolio of
 services whose combined traffic fits on that box.
 
@@ -46,6 +46,6 @@ Applications must compile under Perry's TypeScript subset. See
 - [Architecture](architecture.md) — the three tiers and why they are split that way
 - [Status](status.md) — what is implemented, what is stubbed, what is aspirational
 
-The original design document is preserved unedited at `perch-spec-v0.md` in the
+The original design document is preserved unedited at `coop-spec-v0.md` in the
 repository root. It describes the intended end state; this documentation
 describes what exists.

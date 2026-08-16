@@ -1,15 +1,15 @@
-# Perch
+# Coop
 
 *A place for Perry code to rest and run.*
 
-Perch is a single-binary runtime that hosts TypeScript applications compiled to
+Coop is a single-binary runtime that hosts TypeScript applications compiled to
 native code by [Perry](https://github.com/PerryTS/perry). You push a directory of
-TypeScript, Perch compiles it into a native shared library and serves it over
+TypeScript, Coop compiles it into a native shared library and serves it over
 HTTP — with the language runtime and standard library supplied **once per box**
 rather than linked into every application.
 
 ```
-  TypeScript  ──perry──▶  app.dylib  ──dlopen──▶  perch-worker
+  TypeScript  ──perry──▶  app.dylib  ──dlopen──▶  coop-worker
                              (4 MB)                    │
                                                 shared providers
                                           libperry_runtime · libperry_stdlib
@@ -22,7 +22,7 @@ the runtime, and each application image is small enough to load on demand.
 
 ## Status
 
-Perch is **pre-1.0 infrastructure**, developed for the Skelpo portfolio. It works,
+Coop is **pre-1.0 infrastructure**, developed for the Skelpo portfolio. It works,
 it is tested, and it is not yet a product. Read [`docs/src/status.md`](docs/src/status.md)
 for an honest account of what is implemented, what is partial, and what is
 aspirational in the spec.
@@ -31,7 +31,7 @@ Two things worth knowing before you invest time:
 
 - The **TypeScript subset** is Perry's, not TypeScript's. Some language features
   and most of npm will not compile. See [the subset guide](docs/src/subset.md).
-- **Performance is not yet a settled story.** Perch's hosting model has real
+- **Performance is not yet a settled story.** Coop's hosting model has real
   memory-density advantages, but per-request CPU is currently worse than Node on
   equivalent work. The numbers and their caveats are in
   [`docs/src/benchmarks.md`](docs/src/benchmarks.md) — including which previously
@@ -50,17 +50,17 @@ Node for the developer tooling.
 ./scripts/build-perry-libraries.sh
 
 # 2. Build the daemon and worker
-cargo build --release -p perch-daemon -p perch-worker -p perch-cli
+cargo build --release -p coop-daemon -p coop-worker -p coop-cli
 
 # 3. Run a deployment locally
-./target/release/perch-cli dev ./examples/landing
+./target/release/coop-cli dev ./examples/landing
 ```
 
-A minimal deployment is a directory with a `perch.toml` and at least one handler:
+A minimal deployment is a directory with a `coop.toml` and at least one handler:
 
 ```
 landing/
-├── perch.toml
+├── coop.toml
 ├── handlers/
 │   └── contact.ts
 └── static/
@@ -68,7 +68,7 @@ landing/
 ```
 
 ```toml
-# perch.toml
+# coop.toml
 name = "landing"
 version = "0.1.0"
 
@@ -85,19 +85,19 @@ directory = "./static"
 path = "/"
 ```
 
-Full reference: [`docs/src/perch-toml.md`](docs/src/perch-toml.md).
+Full reference: [`docs/src/coop-toml.md`](docs/src/coop-toml.md).
 
 ---
 
 ## Writing a handler
 
-Handlers import from `@perch/runtime`:
+Handlers import from `@coop/runtime`:
 
 ```ts
-import { PerchRequest, respond, jsonResponse, log, db } from "@perch/runtime";
+import { CoopRequest, respond, jsonResponse, log, db } from "@coop/runtime";
 
 export function handle(reqJson: string): string {
-  const req = new PerchRequest(reqJson);
+  const req = new CoopRequest(reqJson);
   log.info("request received", { method: req.method, path: req.path });
 
   const rows = db.query("SELECT id, email FROM subscribers LIMIT 10");
@@ -106,9 +106,9 @@ export function handle(reqJson: string): string {
 ```
 
 The runtime surface — `db`, `kv`, `storage`, `queue`, `secrets`, `log`,
-`perchFetch` — is documented in [`docs/src/runtime-api.md`](docs/src/runtime-api.md).
+`coopFetch` — is documented in [`docs/src/runtime-api.md`](docs/src/runtime-api.md).
 
-There is also a lower-level binary protocol (`PCH2`) for handlers that need to
+There is also a lower-level binary protocol (`COOP`) for handlers that need to
 avoid JSON entirely; see [`docs/src/host-abi.md`](docs/src/host-abi.md).
 
 ---
@@ -119,8 +119,8 @@ Three tiers, each with a different failure boundary:
 
 | tier | process | what it owns |
 |---|---|---|
-| **daemon** (`perch`) | one per box | TLS, routing, deployments, artifacts, metrics |
-| **worker** (`perch-worker`) | one per deployment | the app dylib, its Perry runtime state, cron, queue polling |
+| **daemon** (`coop`) | one per box | TLS, routing, deployments, artifacts, metrics |
+| **worker** (`coop-worker`) | one per deployment | the app dylib, its Perry runtime state, cron, queue polling |
 | **invocation** | Tokio task | a single request |
 
 The daemon never runs application code. A worker crash takes down one
@@ -128,13 +128,13 @@ deployment, not the box.
 
 The full design — including why the compiler is treated as the primary
 isolation boundary — is in [`docs/src/architecture.md`](docs/src/architecture.md),
-and the original design document is preserved at [`perch-spec-v0.md`](perch-spec-v0.md).
+and the original design document is preserved at [`coop-spec-v0.md`](coop-spec-v0.md).
 
 ---
 
 ## The shared-provider model
 
-This is what distinguishes Perch from "compile each app to its own binary".
+This is what distinguishes Coop from "compile each app to its own binary".
 
 `perry-runtime` and `perry-stdlib` are built **once** as shared libraries
 (`libperry_runtime_provider.dylib` / `.so`). Each application dylib is compiled
@@ -153,12 +153,12 @@ the manifest format, and how to regenerate artifacts after a Perry bump.
 
 | path | what it is |
 |---|---|
-| `crates/perch-daemon` | the box daemon: routing, TLS, deployments, admin API |
-| `crates/perch-worker` | per-deployment host: dylib loading, cron, queue |
-| `crates/perch-host-abi` | shared vocabulary: daemon↔worker JSON, host↔app `PCH2` |
-| `crates/perch-cli` | developer CLI (`list`, `deploy`, `logs`, `rollback`, `dev`) |
+| `crates/coop-daemon` | the box daemon: routing, TLS, deployments, admin API |
+| `crates/coop-worker` | per-deployment host: dylib loading, cron, queue |
+| `crates/coop-host-abi` | shared vocabulary: daemon↔worker JSON, host↔app `COOP` |
+| `crates/coop-cli` | developer CLI (`list`, `deploy`, `logs`, `rollback`, `dev`) |
 | `crates/perry-stdlib-shared` | the cdylib that publishes the stdlib provider ABI |
-| `packages/perch-runtime` | `@perch/runtime`, the TypeScript API handlers import |
+| `packages/coop-runtime` | `@coop/runtime`, the TypeScript API handlers import |
 | `scripts/` | provider builds, benchmark harnesses, fixture preparation |
 | `ops/` | Prometheus rules, Grafana dashboard, smoke validation |
 | `docs/` | this documentation, as an mdBook |

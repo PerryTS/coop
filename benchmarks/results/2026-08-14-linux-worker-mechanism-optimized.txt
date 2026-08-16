@@ -1,26 +1,26 @@
-2026-08-14T02:26:38.171595Z  INFO perch starting config=/mnt/lima-colima/perch-linux/target/worker-mechanism-benchmark/runtime.toml
-2026-08-14T02:26:38.178098Z  INFO separate Perry runtime and stdlib loaded globally runtime=/opt/perch/providers/d78ace29ccec93a2117a6c00d462e424f4b581432921de60b197ba3ab8b6d648/libperry_runtime.so stdlib=/opt/perch/providers/d78ace29ccec93a2117a6c00d462e424f4b581432921de60b197ba3ab8b6d648/libperry_stdlib.so provider_verification="root_owned_immutable" perry_version="0.5.1503" perry_commit=564c56308d221a51b50308d9165578fbb176e877 rustc=rustc 1.97.1 (8bab26f4f 2026-07-14) manifest_ms=0.038043999999999994 runtime_dlopen_ms=4.395943 stdlib_dlopen_ms=1.8328820000000001 symbol_bind_ms=0.014168 total_ms=6.302372 rss_kib=17348
+2026-08-14T02:26:38.171595Z  INFO coop starting config=/mnt/lima-colima/coop-linux/target/worker-mechanism-benchmark/runtime.toml
+2026-08-14T02:26:38.178098Z  INFO separate Perry runtime and stdlib loaded globally runtime=/opt/coop/providers/d78ace29ccec93a2117a6c00d462e424f4b581432921de60b197ba3ab8b6d648/libperry_runtime.so stdlib=/opt/coop/providers/d78ace29ccec93a2117a6c00d462e424f4b581432921de60b197ba3ab8b6d648/libperry_stdlib.so provider_verification="root_owned_immutable" perry_version="0.5.1503" perry_commit=564c56308d221a51b50308d9165578fbb176e877 rustc=rustc 1.97.1 (8bab26f4f 2026-07-14) manifest_ms=0.038043999999999994 runtime_dlopen_ms=4.395943 stdlib_dlopen_ms=1.8328820000000001 symbol_bind_ms=0.014168 total_ms=6.302372 rss_kib=17348
 2026-08-14T02:26:38.178154Z  INFO TLS configuration tls=TLS disabled (mode=off)
 2026-08-14T02:26:38.711765Z  INFO application build phase complete deployment=worker-benchmark phase="identity" outcome="success" elapsed_ms=531.9725189999999
-2026-08-14T02:26:38.712270Z  INFO compiling deployment deployment="worker-benchmark" perry=/mnt/lima-colima/perch-linux/.perry-main/target/perry-dev/perry compiler_identity=b664dd4e1c90be97906bc07db4ddc8aeeb4c9324a57d51a3cf1a2f3627ff212a dependency_identity=e1c76022b5641f46a9a1644c56a78a7b375afe9863002961900dd0f467df6493 cache_dir=/mnt/lima-colima/perch-linux/target/worker-mechanism-benchmark/compiled/.perry-cache/b664dd4e1c90be97906bc07db4ddc8aeeb4c9324a57d51a3cf1a2f3627ff212a files=["/mnt/lima-colima/perch-linux/target/worker-mechanism-benchmark/deployments/worker-benchmark/handlers/main.ts"] root=/mnt/lima-colima/perch-linux/target/worker-mechanism-benchmark/compiled/.staging/worker-benchmark-8933-0/.perch-source/perch_entry.ts output=/mnt/lima-colima/perch-linux/target/worker-mechanism-benchmark/compiled/.staging/worker-benchmark-8933-0/app.so
+2026-08-14T02:26:38.712270Z  INFO compiling deployment deployment="worker-benchmark" perry=/mnt/lima-colima/coop-linux/.perry-main/target/perry-dev/perry compiler_identity=b664dd4e1c90be97906bc07db4ddc8aeeb4c9324a57d51a3cf1a2f3627ff212a dependency_identity=e1c76022b5641f46a9a1644c56a78a7b375afe9863002961900dd0f467df6493 cache_dir=/mnt/lima-colima/coop-linux/target/worker-mechanism-benchmark/compiled/.perry-cache/b664dd4e1c90be97906bc07db4ddc8aeeb4c9324a57d51a3cf1a2f3627ff212a files=["/mnt/lima-colima/coop-linux/target/worker-mechanism-benchmark/deployments/worker-benchmark/handlers/main.ts"] root=/mnt/lima-colima/coop-linux/target/worker-mechanism-benchmark/compiled/.staging/worker-benchmark-8933-0/.coop-source/coop_entry.ts output=/mnt/lima-colima/coop-linux/target/worker-mechanism-benchmark/compiled/.staging/worker-benchmark-8933-0/app.so
 2026-08-14T02:26:38.712327Z  INFO application build phase complete deployment=worker-benchmark phase="snapshot" outcome="success" elapsed_ms=0.5172450000000001
 2026-08-14T02:26:39.086946Z  INFO application build phase complete deployment=worker-benchmark phase="compiler" outcome="success" elapsed_ms=374.600792
 2026-08-14T02:26:39.086968Z  INFO Perry compiler process completed deployment="worker-benchmark" elapsed_ms=374.600168 peak_rss_bytes=168484864
-2026-08-14T02:26:39.086975Z  INFO Perry compiler cache report deployment="worker-benchmark" report={"output":"/mnt/lima-colima/perch-linux/target/worker-mechanism-benchmark/compiled/.staging/worker-benchmark-8933-0/app.so"}
+2026-08-14T02:26:39.086975Z  INFO Perry compiler cache report deployment="worker-benchmark" report={"output":"/mnt/lima-colima/coop-linux/target/worker-mechanism-benchmark/compiled/.staging/worker-benchmark-8933-0/app.so"}
 2026-08-14T02:26:39.086983Z  INFO Perry codegen cache result deployment="worker-benchmark" hits=1 misses=1
 2026-08-14T02:26:39.105545Z  INFO application build phase complete deployment=worker-benchmark phase="validation" outcome="success" elapsed_ms=18.546001999999998
 2026-08-14T02:26:39.110516Z  INFO application build phase complete deployment=worker-benchmark phase="package" outcome="success" elapsed_ms=4.934139
 2026-08-14T02:26:39.111109Z  INFO application build phase complete deployment=worker-benchmark phase="publication" outcome="success" elapsed_ms=0.568045
-2026-08-14T02:26:39.111136Z  INFO compilation succeeded and immutable package was published deployment="worker-benchmark" dylib=/mnt/lima-colima/perch-linux/target/worker-mechanism-benchmark/compiled/worker-benchmark/5bd83873cf3334096ccd307dc28b393dfa38a972fba79238c85f6ab3c75ec786/app.so library_sha256=9382e64d08bd91899da511dc183b438bfd99cfa5193a1ba3c6a37de982181182 package_sha256=5bd83873cf3334096ccd307dc28b393dfa38a972fba79238c85f6ab3c75ec786
-2026-08-14T02:26:39.111293Z  INFO immutable application package prebuilt deployment="worker-benchmark" library=/mnt/lima-colima/perch-linux/target/worker-mechanism-benchmark/compiled/worker-benchmark/5bd83873cf3334096ccd307dc28b393dfa38a972fba79238c85f6ab3c75ec786/app.so elapsed_ms=931.718996
+2026-08-14T02:26:39.111136Z  INFO compilation succeeded and immutable package was published deployment="worker-benchmark" dylib=/mnt/lima-colima/coop-linux/target/worker-mechanism-benchmark/compiled/worker-benchmark/5bd83873cf3334096ccd307dc28b393dfa38a972fba79238c85f6ab3c75ec786/app.so library_sha256=9382e64d08bd91899da511dc183b438bfd99cfa5193a1ba3c6a37de982181182 package_sha256=5bd83873cf3334096ccd307dc28b393dfa38a972fba79238c85f6ab3c75ec786
+2026-08-14T02:26:39.111293Z  INFO immutable application package prebuilt deployment="worker-benchmark" library=/mnt/lima-colima/coop-linux/target/worker-mechanism-benchmark/compiled/worker-benchmark/5bd83873cf3334096ccd307dc28b393dfa38a972fba79238c85f6ab3c75ec786/app.so elapsed_ms=931.718996
 worker_oracle=iterations:100,checksum:3726872593,json
 perry_package_sha256=5bd83873cf3334096ccd307dc28b393dfa38a972fba79238c85f6ab3c75ec786
 perry_provider_verification=root_owned_immutable
-perry_runtime_path=/opt/perch/providers/d78ace29ccec93a2117a6c00d462e424f4b581432921de60b197ba3ab8b6d648/libperry_runtime.so
-perry_stdlib_path=/opt/perch/providers/d78ace29ccec93a2117a6c00d462e424f4b581432921de60b197ba3ab8b6d648/libperry_stdlib.so
+perry_runtime_path=/opt/coop/providers/d78ace29ccec93a2117a6c00d462e424f4b581432921de60b197ba3ab8b6d648/libperry_runtime.so
+perry_stdlib_path=/opt/coop/providers/d78ace29ccec93a2117a6c00d462e424f4b581432921de60b197ba3ab8b6d648/libperry_stdlib.so
 perry_runtime_sha256=35d2ac02e32e54381e18e7f6d5c14240101a2a2de5a3330c8673b658299d90d5
 perry_stdlib_sha256=0304364e5756fb79639c0282d1b0766b75561299bc95f7acdaa0b2c1a60904f4
-perch_daemon_sha256=7cabb21d7579fd9a98b3d5a94a38e4cd21e9f4f5827a5b40b37967ad709c97e3
+coop_daemon_sha256=7cabb21d7579fd9a98b3d5a94a38e4cd21e9f4f5827a5b40b37967ad709c97e3
 node_fixture_sha256=eab183d95467a7caba00d2700c95aeefa84d87c32eb8e7ecceada43261e74aba
 node_version=v18.19.1
 kernel=Linux 6.8.0-117-generic #117-Ubuntu SMP PREEMPT_DYNAMIC Thu May  7 17:26:37 UTC 2026 aarch64 GNU/Linux
@@ -40,11 +40,11 @@ RESULT name="node-worker" trials=5 load1_start_median=0.59 load1_end_median=0.60
 ───────────────────────────────────────────────
 Total Upload: 0.56 KiB / gzip: 0.32 KiB
 Your Worker has no bindings.
-Bundled perch-celld-benchmark (0.00 sec)
+Bundled coop-celld-benchmark (0.00 sec)
 2026-08-14T02:27:14.796795Z  INFO object_store::aws::builder: Using Static credential provider
 2026-08-14T02:27:14.801899Z  INFO object_store::aws::builder: Using Static credential provider
-Uploaded perch-celld-benchmark (0.02 sec)
-  s3://perch-celld-benchmark/deploy/perch-celld-benchmark/49f838f8b9ec28bf
+Uploaded coop-celld-benchmark (0.02 sec)
+  s3://coop-celld-benchmark/deploy/coop-celld-benchmark/49f838f8b9ec28bf
 Current Version ID: 49f838f8b9ec28bf
 Nodes load a deployment at startup; restart them to serve this version.
 celld_commit=3f22aedd1ea4d413b93e84afb1ce385f04be84f1
