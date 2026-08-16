@@ -151,59 +151,73 @@ jobs:
             exit 1
           fi
 
-          # Prefer the cgroup this job is actually in; fall back to the unified
-          # root, which is where a namespaced path resolves to anyway.
-          parent=""
+          # A candidate parent is one we can actually DELEGATE FROM, which is a
+          # stronger property than having a `cgroup.controllers` file.
+          #
+          # cgroup-v2's "no internal process" rule forbids enabling
+          # `cgroup.subtree_control` on a cgroup that contains processes. On a
+          # GitHub-hosted runner the job runs inside
+          # `system.slice/hosted-compute-agent.service`, which therefore returns
+          # EBUSY ("Device or resource busy") and leaves the child with EMPTY
+          # controllers -- even though the parent advertises all five. The root
+          # cgroup is exempt from that rule, so it is the usable fallback.
+          #
+          # So: try each candidate end to end and keep the first that yields a
+          # child actually carrying memory, cpu and pids. Testing the property
+          # we need beats testing a proxy for it -- the previous version checked
+          # for `cgroup.controllers`, which was present on a parent that could
+          # not delegate, so it never reached the fallback.
+          root=""
           for candidate in "/sys/fs/cgroup${relative}" "/sys/fs/cgroup"; do
-            if [ -f "${candidate}/cgroup.controllers" ]; then
-              parent="$candidate"
-              echo "using parent cgroup: $parent"
-              break
+            [ -f "${candidate}/cgroup.controllers" ] || {
+              echo "candidate rejected (no cgroup.controllers): $candidate"
+              continue
+            }
+            echo "--- trying parent: $candidate"
+            echo "    controllers     : $(cat "$candidate/cgroup.controllers" 2>/dev/null || echo '<unreadable>')"
+            echo "    subtree_control : $(cat "$candidate/cgroup.subtree_control" 2>/dev/null || echo '<empty>')"
+
+            missing=""
+            for controller in memory cpu pids; do
+              grep -qw "$controller" "$candidate/cgroup.controllers" || missing="$missing $controller"
+            done
+            if [ -n "$missing" ]; then
+              echo "    rejected: parent does not offer:$missing"
+              continue
             fi
-            echo "not delegable (no cgroup.controllers): $candidate"
+
+            if ! echo '+memory +cpu +pids' | sudo tee "$candidate/cgroup.subtree_control" >/dev/null 2>&1; then
+              echo "    rejected: cannot enable subtree_control (likely EBUSY --"
+              echo "              cgroup-v2 forbids it on a cgroup holding processes)"
+              continue
+            fi
+
+            attempt="${candidate}/coop-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            sudo mkdir -p "$attempt"
+            child_controllers="$(cat "$attempt/cgroup.controllers" 2>/dev/null || true)"
+            echo "    child controllers: ${child_controllers:-<empty>}"
+
+            child_missing=""
+            for controller in memory cpu pids; do
+              grep -qw "$controller" <<<"$child_controllers" || child_missing="$child_missing $controller"
+            done
+            if [ -n "$child_missing" ]; then
+              echo "    rejected: delegated child lacks:$child_missing"
+              sudo rmdir "$attempt" 2>/dev/null || true
+              continue
+            fi
+
+            root="$attempt"
+            echo "    ACCEPTED"
+            break
           done
-          if [ -z "$parent" ]; then
-            echo "::error::No delegable cgroup-v2 parent found."
-            echo "::error::Tried /sys/fs/cgroup${relative} and /sys/fs/cgroup."
-            ls -la /sys/fs/cgroup 2>&1 | head -20
+
+          if [ -z "$root" ]; then
+            echo "::error::No cgroup-v2 parent could delegate memory+cpu+pids."
+            echo "::error::Tried /sys/fs/cgroup${relative} and /sys/fs/cgroup; see the"
+            echo "::error::per-candidate rejection reasons above."
             exit 1
           fi
-
-          echo "parent controllers      : $(cat "$parent/cgroup.controllers" 2>/dev/null || echo '<unreadable>')"
-          echo "parent subtree_control  : $(cat "$parent/cgroup.subtree_control" 2>/dev/null || echo '<unreadable>')"
-
-          # A child sees only what the parent delegates, so enable these in the
-          # PARENT first. Failure here is not fatal on its own -- they may be
-          # enabled already, or the parent may be the root -- so the assertion
-          # that matters is made against the child below.
-          for controller in memory cpu pids; do
-            if ! grep -qw "$controller" "$parent/cgroup.controllers"; then
-              echo "::error::Parent $parent does not offer the '$controller' controller."
-              echo "::error::Available: $(cat "$parent/cgroup.controllers")"
-              exit 1
-            fi
-          done
-          echo '+memory +cpu +pids' | sudo tee "$parent/cgroup.subtree_control" >/dev/null || {
-            echo "::warning::Could not write $parent/cgroup.subtree_control; continuing to the child check."
-          }
-
-          root="${parent}/coop-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          sudo mkdir "$root"
-
-          # THE load-bearing assertion: the child must actually carry the three
-          # controllers. Everything above is setup; this is the property the
-          # worker-enforcement tests depend on.
-          child_controllers="$(cat "$root/cgroup.controllers" 2>/dev/null || true)"
-          echo "child controllers       : ${child_controllers:-<empty>}"
-          for controller in memory cpu pids; do
-            if ! grep -qw "$controller" <<<"$child_controllers"; then
-              echo "::error::Delegated cgroup $root lacks the '$controller' controller."
-              echo "::error::A child inherits only what the parent enables in"
-              echo "::error::cgroup.subtree_control, which here is: $(cat "$parent/cgroup.subtree_control" 2>/dev/null || echo '<unreadable>')"
-              sudo rmdir "$root" 2>/dev/null || true
-              exit 1
-            fi
-          done
 
           echo '+memory +cpu +pids' | sudo tee "$root/cgroup.subtree_control" >/dev/null
           sudo chown "$(id -u):$(id -g)" \
