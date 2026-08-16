@@ -83,31 +83,59 @@ jobs:
       # stops at the first failing target and silently skips the remaining
       # worker test binaries, which reads as a pass.
       #
-      # Three coop-worker suites — plugin_roundtrip, provider_integrity and
-      # binary_http_roundtrip — load real application dylibs against built
+      # Three coop-worker suites -- plugin_roundtrip, provider_integrity and
+      # binary_http_roundtrip -- load real application dylibs against built
       # Perry provider images. They cannot run without those artifacts and
-      # belong to the shared-runtime proof job, not to a fast gate. They are
-      # named individually rather than excluded by a pattern so that adding a
-      # fourth provider suite fails here loudly instead of being skipped
-      # silently.
+      # belong to the shared-runtime proof job, not to a fast gate.
+      #
+      # This is an EXCLUDE list, not a run list. It was a run list, and that is
+      # a gate hole: `runtime_package_behavior` (11 Perry-free tests covering kv
+      # and storage) was added by a PR and simply never ran here, because
+      # nothing added it to the list. A whitelist of what to run makes a new
+      # suite invisible by default; a blocklist of what to skip makes it run by
+      # default and forces a deliberate edit to exclude it.
+      #
+      # The named-suite check below then fails if an excluded suite disappears,
+      # so a rename cannot leave a stale exclusion silently skipping nothing.
       - name: Tests (Perry-free crates, provider suites excluded)
+        shell: bash
         run: |
+          set -euo pipefail
+          provider_suites=(plugin_roundtrip provider_integrity binary_http_roundtrip)
+
+          present="$(ls crates/coop-worker/tests/*.rs | xargs -n1 basename | sed 's/\.rs$//')"
+          for suite in "${provider_suites[@]}"; do
+            grep -qx "$suite" <<<"$present" || {
+              echo "::error::Excluded provider suite '$suite' no longer exists."
+              echo "::error::Delete it from provider_suites, or the exclusion is skipping nothing."
+              exit 1
+            }
+          done
+
           cargo test -p coop-host-abi --no-fail-fast
           cargo test -p coop-cli --no-fail-fast
           cargo test -p coop-worker --lib --no-fail-fast
-          cargo test -p coop-worker --test socket_framing --no-fail-fast
+
+          while read -r suite; do
+            skip=""
+            for p in "${provider_suites[@]}"; do [ "$p" = "$suite" ] && skip=1; done
+            [ -n "$skip" ] && { echo "skipping provider suite: $suite"; continue; }
+            echo "::group::coop-worker --test $suite"
+            cargo test -p coop-worker --test "$suite" --no-fail-fast
+            echo "::endgroup::"
+          done <<<"$present"
 
       # Several suites self-skip when their fixtures are absent (no providers,
       # no compiled Perry). A skip is an early `return`, which counts as a pass
-      # in the summary line — so surface them rather than letting a green run
+      # in the summary line -- so surface them rather than letting a green run
       # hide that nothing executed.
       - name: Report self-skipped suites
         if: always()
         run: |
           # Case-insensitive and unanchored on purpose: this repository prints
-          # BOTH `skip:` (12 sites) and `SKIP:` (10 sites), and an anchored
-          # lowercase pattern silently saw only half of them — a skip-detector
-          # that cannot see skips is the exact failure this step exists to catch.
+          # BOTH `skip:` and `SKIP:`, and an anchored lowercase pattern silently
+          # saw only half of them -- a skip-detector that cannot see skips is the
+          # exact failure this step exists to catch.
           cargo test -p coop-host-abi -p coop-cli -p coop-worker --no-fail-fast -- --nocapture 2>&1 \
             | grep -iE 'skip:' || echo "no suites self-skipped"
 
