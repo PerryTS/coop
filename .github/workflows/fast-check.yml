@@ -47,6 +47,26 @@ jobs:
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
 
+      # Cargo resolves the WHOLE workspace before building any member, so
+      # `perry-stdlib-shared`'s path dependency on `perry-ffi` must exist even
+      # though nothing this job builds depends on Perry. A depth-1 fetch of the
+      # pinned commit is enough: the manifests need to be readable, not built.
+      #
+      # Validating this gate locally passed without it only because `.perry-main`
+      # already existed as an untracked worktree — exactly the "worked on my
+      # machine because of untracked state" failure this step now prevents.
+      - name: Check out the pinned Perry revision (manifests only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(sed -n 's/^commit = "\([0-9a-f]*\)"/\1/p' perry-main.lock)"
+          test -n "$commit"
+          git init .perry-main
+          git -C .perry-main remote add origin https://github.com/PerryTS/perry.git
+          git -C .perry-main fetch --depth 1 origin "$commit"
+          git -C .perry-main checkout --detach FETCH_HEAD
+          test "$(git -C .perry-main rev-parse HEAD)" = "$commit"
+
       - uses: Swatinem/rust-cache@v2
         with:
           key: fast-check
