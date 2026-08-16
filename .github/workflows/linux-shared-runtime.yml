@@ -110,21 +110,105 @@ jobs:
           grep -Fx coop_app_http_v2 /tmp/coop-app-exports.txt
           grep -Fx perry_module_init /tmp/coop-app-exports.txt
 
+      # Every step below this one runs through `run-in-delegated-cgroup.sh`, so a
+      # failure here skips the entire proof: the loader/integrity/lifecycle
+      # tests and both RSS matrices. It is worth being loud.
+      #
+      # It previously was not. The step was a bare sequence under
+      # `set -euo pipefail` in which the two most likely failures --
+      # `test -f "$parent/cgroup.controllers"` and `grep -qw "$controller"` --
+      # both produce NO output. It exited 1 in about 30 ms having printed
+      # nothing at all, which says only "cgroups, somehow".
+      #
+      # Two real hazards, neither of which the original distinguished:
+      #
+      #  1. The parent derived from /proc/self/cgroup need not be a delegable
+      #     cgroup-v2 directory. Under a cgroup namespace the path is relative
+      #     to the namespace root, and on a hybrid/v1 host there is no unified
+      #     `cgroup.controllers` at all.
+      #  2. A freshly created child inherits ONLY the controllers its parent
+      #     advertises in `cgroup.subtree_control`. If the parent has not
+      #     enabled memory/cpu/pids, the child's `cgroup.controllers` is EMPTY
+      #     and the `grep -qw` loop fails -- silently, and for a reason that
+      #     has nothing to do with the child.
+      #
+      # So: probe explicitly, enable the controllers in the parent before
+      # creating the child, and name the exact unmet condition on failure.
       - name: Delegate a cgroup-v2 subtree for worker enforcement
         shell: bash
         run: |
           set -euo pipefail
+
+          echo "::group::cgroup environment"
+          echo "--- /proc/self/cgroup"; cat /proc/self/cgroup || true
+          echo "--- unified mount"; grep -E 'cgroup2? ' /proc/self/mounts || true
+          echo "::endgroup::"
+
           relative="$(awk -F: '$1 == "0" { print $3 }' /proc/self/cgroup)"
-          parent="/sys/fs/cgroup${relative}"
-          root="${parent}/coop-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          test -f "$parent/cgroup.controllers"
-          sudo mkdir "$root"
-          for controller in memory cpu pids; do
-            grep -qw "$controller" "$root/cgroup.controllers"
+          if [ -z "$relative" ]; then
+            echo "::error::/proc/self/cgroup has no unified (0::) entry."
+            echo "::error::This host is not running a cgroup-v2 unified hierarchy."
+            exit 1
+          fi
+
+          # Prefer the cgroup this job is actually in; fall back to the unified
+          # root, which is where a namespaced path resolves to anyway.
+          parent=""
+          for candidate in "/sys/fs/cgroup${relative}" "/sys/fs/cgroup"; do
+            if [ -f "${candidate}/cgroup.controllers" ]; then
+              parent="$candidate"
+              echo "using parent cgroup: $parent"
+              break
+            fi
+            echo "not delegable (no cgroup.controllers): $candidate"
           done
+          if [ -z "$parent" ]; then
+            echo "::error::No delegable cgroup-v2 parent found."
+            echo "::error::Tried /sys/fs/cgroup${relative} and /sys/fs/cgroup."
+            ls -la /sys/fs/cgroup 2>&1 | head -20
+            exit 1
+          fi
+
+          echo "parent controllers      : $(cat "$parent/cgroup.controllers" 2>/dev/null || echo '<unreadable>')"
+          echo "parent subtree_control  : $(cat "$parent/cgroup.subtree_control" 2>/dev/null || echo '<unreadable>')"
+
+          # A child sees only what the parent delegates, so enable these in the
+          # PARENT first. Failure here is not fatal on its own -- they may be
+          # enabled already, or the parent may be the root -- so the assertion
+          # that matters is made against the child below.
+          for controller in memory cpu pids; do
+            if ! grep -qw "$controller" "$parent/cgroup.controllers"; then
+              echo "::error::Parent $parent does not offer the '$controller' controller."
+              echo "::error::Available: $(cat "$parent/cgroup.controllers")"
+              exit 1
+            fi
+          done
+          echo '+memory +cpu +pids' | sudo tee "$parent/cgroup.subtree_control" >/dev/null || {
+            echo "::warning::Could not write $parent/cgroup.subtree_control; continuing to the child check."
+          }
+
+          root="${parent}/coop-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          sudo mkdir "$root"
+
+          # THE load-bearing assertion: the child must actually carry the three
+          # controllers. Everything above is setup; this is the property the
+          # worker-enforcement tests depend on.
+          child_controllers="$(cat "$root/cgroup.controllers" 2>/dev/null || true)"
+          echo "child controllers       : ${child_controllers:-<empty>}"
+          for controller in memory cpu pids; do
+            if ! grep -qw "$controller" <<<"$child_controllers"; then
+              echo "::error::Delegated cgroup $root lacks the '$controller' controller."
+              echo "::error::A child inherits only what the parent enables in"
+              echo "::error::cgroup.subtree_control, which here is: $(cat "$parent/cgroup.subtree_control" 2>/dev/null || echo '<unreadable>')"
+              sudo rmdir "$root" 2>/dev/null || true
+              exit 1
+            fi
+          done
+
           echo '+memory +cpu +pids' | sudo tee "$root/cgroup.subtree_control" >/dev/null
           sudo chown "$(id -u):$(id -g)" \
             "$root" "$root/cgroup.procs" "$root/cgroup.subtree_control"
+          echo "delegated: $root"
           echo "COOP_DELEGATED_CGROUP_ROOT=${root}" >> "$GITHUB_ENV"
           echo "COOP_TEST_CGROUP_ROOT=${root}/workers" >> "$GITHUB_ENV"
           echo "COOP_BENCH_CGROUP_ROOT=${root}/benchmarks" >> "$GITHUB_ENV"
