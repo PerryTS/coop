@@ -56,6 +56,28 @@ if [[ ! -d "$source_root/node_modules/next" ]]; then
   fail "the Next dependency tree is not installed under $source_root" \
     "(cd $source_root && npm ci)"
 fi
+
+# Build the production App Route. The handler drives Next's own
+# `AppRouteRouteModule.handle` out of `.next/server`, so this output is a
+# compiler input, not an optional artifact.
+#
+# It is BUILT rather than committed on purpose. A `.next-production-bundle/`
+# used to live in git, and it had silently drifted from
+# `app/api/benchmark/route.ts`: the committed copy parsed
+# `nextUrl.searchParams`, clamped iterations, set an `x-perch-benchmark-body`
+# header, and was emitted by a different bundler entirely. Coop would have
+# been measured against different code than the Node standalone build compiles
+# from the same source, which is not a comparison at all.
+route_build="$source_root/.next/server/app/api/benchmark/route.js"
+if [[ ! -f "$route_build" || "$source_root/app/api/benchmark/route.ts" -nt "$route_build" ]]; then
+  echo "building the production Next App Route (source is newer than the build)" >&2
+  ( cd "$source_root" && npx --no-install next build >/dev/null ) || \
+    fail "next build failed in $source_root" "(cd $source_root && npx next build)"
+fi
+if [[ ! -f "$route_build" ]]; then
+  fail "next build produced no $route_build" \
+    "check the Next version and app/api/benchmark/route.ts"
+fi
 for required in \
   "$source_root/coop/coop.toml" \
   "$source_root/coop/coop-handler.ts" \
@@ -86,6 +108,9 @@ cp "$source_root/coop/coop.toml" "$deployment/coop.toml"
 cp "$source_root/coop/coop-handler.ts" "$deployment/handlers/main.ts"
 cp "$source_root/app/api/benchmark/route.ts" "$deployment/app/api/benchmark/route.ts"
 ln -sfn "$source_root/node_modules" "$deployment/node_modules"
+# The production build output, linked like the dependency tree: it is
+# generated, not source, and the daemon dereferences it into its snapshot.
+ln -sfn "$source_root/.next" "$deployment/.next"
 
 # The pre-2026-08-14 hand-built fixture lived at this mutable path. Coop no
 # longer publishes there, and leaving it behind lets a stale library outlive a

@@ -8,23 +8,34 @@ server shape described in the repository's `BENCHMARKS.md`.
 - `coop/coop-handler.ts` adapts Coop's synchronous wire ABI to the route.
 - `npm run build` creates the unmodified production Next standalone server.
 
-The Perry adapter is still a lower bound, but a smaller one than it was, and
-the distinction matters when reading any number it produces.
+The Coop adapter now drives Next's own `AppRouteRouteModule.handle` from the
+production build, not the userland `GET` export. `handle` is what sets up the
+AsyncLocalStorage work stores, resolves the handler for the method, applies
+`fetchCache`, and builds the response; calling `GET` runs the route body and
+skips all of it.
 
-It used to call the route, **discard the result**, and emit a hardcoded 200
-with a hardcoded body. It ran the framework work and then fabricated the
-answer, so no assertion about the response could fail. That was a workaround
-for a pin that could not carry a `Response`'s status, headers or body across
-the imported-function boundary; #8036 and #8038 fixed that and the pin now
-includes them, so `coop-handler.ts` now reads status, headers and body from
-the `NextResponse` the route actually returned, and throws if it gets nothing
-usable.
+Two things this fixture previously got wrong, both of which invalidated every
+number it produced:
 
-What remains a lower bound: it invokes the userland `GET` export rather than
-Next's private `AppRouteRouteModule.handle`, so the work-store machinery
-around the route is not exercised. Driving `routeModule.handle` needs the full
-production build output rather than the source route. **Until that lands, do
-not describe this fixture as full Next hosting.**
+1. It called `GET(request)`, **threw the result away**, and emitted a hardcoded
+   200 with a hardcoded body. It ran the framework work and then fabricated the
+   answer, so no assertion about the response could ever fail.
+2. It shipped a `.next-production-bundle/` **checked into git**, which had
+   drifted from `app/api/benchmark/route.ts` — the committed copy parsed
+   `nextUrl.searchParams`, clamped iterations to 1..10000, set an
+   `x-perch-benchmark-body` header, and was emitted by webpack while the
+   current toolchain emits turbopack. Coop would have been measured against
+   different code than the Node build compiles from the same source.
+
+The bundle is now **built**, never committed, and `prepare-next-benchmark.sh`
+rebuilds it whenever `route.ts` is newer. A build output living in git can only
+drift again, silently, and (2) is what that costs.
+
+Import order in `coop-handler.ts` is load-bearing: the route bundle must be
+imported **before** `next/server`, because loading it installs Next's require
+hook. Reverse them and `next/server` resolves to the edge build, whose module
+init throws `Invariant: AsyncLocalStorage accessed in runtime where it is not
+available`.
 
 Build the Node form from this directory:
 

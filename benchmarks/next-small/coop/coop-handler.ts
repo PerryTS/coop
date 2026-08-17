@@ -1,35 +1,104 @@
-import { NextRequest } from "next/server";
-import { GET } from "../app/api/benchmark/route";
+// Adapt Coop's compact wire protocol to a REAL Next.js production App Route.
+//
+// This drives Next's own `AppRouteRouteModule.handle` from the production
+// build output, not the userland `GET` export. That distinction is the whole
+// point of the fixture: `handle` is what sets up the AsyncLocalStorage work
+// stores, resolves the handler for the method, applies `fetchCache`, and
+// builds the response. Calling `GET` directly runs the route body and skips
+// all of it.
+//
+// TWO THINGS THIS FIXTURE GOT WRONG BEFORE, BOTH OF WHICH INVALIDATED NUMBERS.
+//
+// 1. It called `GET(request)`, THREW THE RESULT AWAY, and emitted a hardcoded
+//    200 with a hardcoded body. It ran the framework work and then fabricated
+//    the answer, so no assertion about the response could ever fail.
+//
+// 2. It read a `.next-production-bundle/` checked into the repository, which
+//    had DRIFTED from `app/api/benchmark/route.ts`: the committed bundle
+//    parsed `nextUrl.searchParams`, clamped iterations to 1..10000, and set an
+//    `x-perch-benchmark-body` header. The source did none of that. Coop would
+//    have been benchmarked against different code than the Node standalone
+//    build compiled from source -- not a like-for-like comparison at all.
+//
+// So the bundle is now BUILT from the same source Node builds from, and the
+// committed copy is gone. A build output that lives in git can only drift
+// again, silently, and the second failure above is what that costs.
+//
+// The route path is resolved at build time by `next build` into
+// `.next/server/app/api/benchmark/route.js`. Note the current toolchain emits
+// a turbopack runtime, while the committed bundle this replaced was webpack --
+// another sign of how far that checked-in artifact had drifted.
 
-/**
- * Adapt Coop's compact wire protocol to the same Next.js App Route function
- * the production Node build serves.
- *
- * WHAT CHANGED, AND WHY IT MATTERS FOR EVERY NUMBER THIS FIXTURE PRODUCES.
- *
- * This adapter used to call `GET(nextRequest)`, throw the result away, and
- * emit a hardcoded 200 with a hardcoded body and a hardcoded checksum. It ran
- * the framework work and then fabricated the answer. Any measurement taken
- * against it was a lower bound on Perry's cost by construction, and no
- * assertion about the response could fail, because the response never came
- * from Next.
- *
- * That was not dishonesty in the original, it was a workaround: the Perry pin
- * of the day could not carry a `Response`'s status, headers, or body across
- * this imported-function boundary. #8036 and #8038 fixed exactly that, and the
- * pin now includes them, so the workaround can go.
- *
- * The response is now READ FROM NEXT: status, headers and body all come from
- * the `NextResponse` the route returned. If the transport regresses, this
- * fixture fails loudly rather than quietly reporting a fabricated 200 -- which
- * is the property that makes it worth benchmarking at all.
- *
- * Still a lower bound in one respect: it invokes the userland `GET` export
- * rather than Next's private `AppRouteRouteModule.handle`, so the work-store
- * machinery around the route is not exercised. That is the next step, and it
- * needs the full production build output rather than the source route. Until
- * then this fixture must not be described as full Next hosting.
- */
+// The production build output is CommonJS that assigns `module.exports`
+// directly and sets no `__esModule` flag, so its interop shape differs by
+// toolchain: a namespace import surfaces the exports object under some, and
+// under a `default` key under others. A plain default import yields
+// `undefined` -- verified, not assumed.
+//
+// So accept either shape and fail loudly if neither carries a routeModule,
+// rather than dereferencing undefined and reporting something confusing.
+import * as routeBundleNamespace from "../.next/server/app/api/benchmark/route.js";
+
+// IMPORT ORDER IS LOAD-BEARING. The route bundle must be loaded BEFORE
+// `next/server`: loading it installs Next's require hook, and without that
+// `next/server` resolves to the edge build, whose module init throws
+// "Invariant: AsyncLocalStorage accessed in runtime where it is not
+// available". Verified by reordering these two lines and watching it break.
+import { NextRequest } from "next/server";
+
+const routeBundle: Record<string, unknown> =
+  (routeBundleNamespace as Record<string, unknown>).routeModule !== undefined
+    ? (routeBundleNamespace as Record<string, unknown>)
+    : (((routeBundleNamespace as Record<string, unknown>).default ??
+        {}) as Record<string, unknown>);
+
+const routeModule = routeBundle.routeModule as
+  | { handle: (request: object, context: unknown) => Promise<Response> }
+  | undefined;
+if (routeModule === undefined || typeof routeModule.handle !== "function") {
+  throw new Error(
+    "production App Route exports are missing: run `next build` in benchmarks/next-small",
+  );
+}
+
+// Record entry into the real `handle`, keyed by the request object itself so
+// concurrent dispatches cannot be confused for one another.
+//
+// In this adapter a bypass is impossible by construction -- we call `handle`
+// ourselves. The guard is here for the refactor that switches to the generated
+// `handler(req, res, ctx)` entry, which CAN bypass it, and which is exactly
+// the shape Perry's own fixture had to guard. Cheap now, load-bearing later.
+const entered = new WeakSet<object>();
+const realHandle = routeModule.handle.bind(routeModule);
+routeModule.handle = (request: object, context: unknown) => {
+  entered.add(request);
+  return realHandle(request, context);
+};
+
+/** The minimal context `AppRouteRouteModule.handle` reads. Verified against
+ *  the compiled runtime rather than guessed: it needs `renderOpts` and
+ *  `sharedContext.{buildId,deploymentId}`, and Next fills the rest. */
+function routeContext() {
+  return {
+    params: {},
+    prerenderManifest: {
+      version: 4,
+      routes: {},
+      dynamicRoutes: {},
+      notFoundRoutes: [],
+      preview: {
+        previewModeId: "coop-benchmark",
+        previewModeSigningKey: "coop-benchmark",
+        previewModeEncryptionKey: "coop-benchmark",
+      },
+    },
+    renderOpts: {
+      supportsDynamicResponse: true,
+      experimental: { dynamicIO: false, authInterrupts: false },
+    },
+    sharedContext: { buildId: "coop-bench", deploymentId: "coop" },
+  };
+}
 
 async function executeNextRoute(
   rawMethod: string,
@@ -49,19 +118,21 @@ async function executeNextRoute(
     init.duplex = "half";
   }
 
-  const nextRequest = new NextRequest(url, init);
-  const response = await GET(nextRequest);
+  const request = new NextRequest(url, init);
+  const response = await routeModule.handle(request, routeContext());
 
-  // Refuse to invent a response. A route that returned nothing usable is a
-  // failure of the thing under test, and reporting a synthetic 200 here is
-  // how the previous version made its own regressions invisible.
-  if (response === undefined || response === null) {
-    throw new Error("Next route returned no Response");
+  if (!entered.has(request)) {
+    throw new Error("request bypassed AppRouteRouteModule.handle");
   }
 
+  // Refuse to invent a response. Reporting a synthetic 200 here is exactly how
+  // the previous version made its own regressions invisible.
+  if (response === undefined || response === null) {
+    throw new Error("AppRouteRouteModule.handle returned no Response");
+  }
   const status = response.status;
   if (typeof status !== "number" || status === 0) {
-    throw new Error(`Next route returned a Response with no usable status: ${status}`);
+    throw new Error(`handle returned a Response with no usable status: ${status}`);
   }
 
   const collected: [string, string][] = [];
