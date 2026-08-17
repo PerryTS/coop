@@ -49,9 +49,6 @@ rustls = "0.23"
 tokio-rustls = "0.26"
 rustls-acme = { version = "0.11", features = ["axum"] }
 
-# HTTP client for Bunny CDN API + edge IP allowlist
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
-
 # HTML templating for admin UI
 askama = { version = "0.12", features = ["with-axum"] }
 askama_axum = "0.4"

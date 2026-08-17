@@ -300,7 +300,7 @@ pub struct DeploymentRequest {
     pub query: String,
     pub headers: HashMap<String, String>,
     /// Client IP as seen by the daemon. Will be the real client IP when
-    /// the request came via a trusted proxy (Bunny edge), otherwise the
+    /// the request came via a trusted proxy, otherwise the
     /// direct connection peer.
     pub remote_addr: String,
     pub scheme: String,

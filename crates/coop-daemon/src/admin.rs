@@ -2,7 +2,6 @@
 //!
 //! Pages per the spec:
 //! - Dashboard: list of deployments, status, key metrics
-//! - Deployment detail: per-deployment CDN status, DNS instructions
 //!
 //! No React, no build step, no JS framework. Server-rendered HTML with
 //! htmx for partial refreshes. "Ugly is fine; present is the win."
@@ -447,31 +446,21 @@ fn authorize_admin(config: &RuntimeConfig, headers: &HeaderMap) -> Result<(), Re
 
 async fn dashboard(State(state): State<AdminState>) -> Response {
     let router = state.supervisor.current_router();
-    let bunny_enabled = state.runtime_cfg.cdn.bunny.is_some();
     let tls_mode = format!("{:?}", state.runtime_cfg.tls.mode);
 
     let mut deployments = Vec::new();
     for d in router.all() {
-        let cdn_status = if bunny_enabled {
-            let zone_name = format!("coop-{}", d.name.0);
-            format!("Bunny: {}.b-cdn.net", zone_name)
-        } else {
-            "No CDN".to_string()
-        };
-
         deployments.push(DeploymentRow {
             name: d.name.0.clone(),
             hostnames: d.hostnames.join(", "),
             handler_count: d.handlers.len(),
             static_count: d.static_blocks.len(),
-            cdn_status,
         });
     }
 
     let html = render_dashboard(&DashboardData {
         deployment_count: deployments.len(),
         tls_mode,
-        bunny_enabled,
         deployments,
     });
 
@@ -482,13 +471,6 @@ async fn deployment_detail(State(state): State<AdminState>, Path(name): Path<Str
     let router = state.supervisor.current_router();
     match router.get(&name) {
         Some(d) => {
-            let bunny_enabled = state.runtime_cfg.cdn.bunny.is_some();
-            let cdn_url = if bunny_enabled {
-                Some(format!("coop-{}.b-cdn.net", d.name.0))
-            } else {
-                None
-            };
-
             let html = render_deployment_detail(&DeploymentDetailData {
                 name: d.name.0.clone(),
                 hostnames: d.hostnames.clone(),
@@ -510,7 +492,6 @@ async fn deployment_detail(State(state): State<AdminState>, Path(name): Path<Str
                         directory: s.directory.display().to_string(),
                     })
                     .collect(),
-                cdn_url,
             });
             Html(html).into_response()
         }
@@ -523,7 +504,6 @@ async fn deployment_detail(State(state): State<AdminState>, Path(name): Path<Str
 struct DashboardData {
     deployment_count: usize,
     tls_mode: String,
-    bunny_enabled: bool,
     deployments: Vec<DeploymentRow>,
 }
 
@@ -532,7 +512,6 @@ struct DeploymentRow {
     hostnames: String,
     handler_count: usize,
     static_count: usize,
-    cdn_status: String,
 }
 
 struct DeploymentDetailData {
@@ -540,7 +519,6 @@ struct DeploymentDetailData {
     hostnames: Vec<String>,
     handlers: Vec<HandlerRow>,
     static_blocks: Vec<StaticRow>,
-    cdn_url: Option<String>,
 }
 
 struct HandlerRow {
@@ -570,13 +548,11 @@ fn render_dashboard(data: &DashboardData) -> String {
                 <td>{hostnames}</td>
                 <td>{handlers}</td>
                 <td>{statics}</td>
-                <td>{cdn}</td>
             </tr>"#,
             name = d.name,
             hostnames = d.hostnames,
             handlers = d.handler_count,
             statics = d.static_count,
-            cdn = d.cdn_status,
         ));
     }
 
@@ -607,7 +583,6 @@ fn render_dashboard(data: &DashboardData) -> String {
     <div>
         <span class="stat"><strong>{count}</strong> deployments</span>
         <span class="stat"><strong>{tls}</strong> TLS</span>
-        <span class="stat"><strong>{bunny}</strong> CDN</span>
     </div>
 
     <h2>Deployments</h2>
@@ -618,7 +593,6 @@ fn render_dashboard(data: &DashboardData) -> String {
                 <th>Hostnames</th>
                 <th>Handlers</th>
                 <th>Static</th>
-                <th>CDN</th>
             </tr>
         </thead>
         <tbody>
@@ -634,7 +608,6 @@ fn render_dashboard(data: &DashboardData) -> String {
 </html>"#,
         count = data.deployment_count,
         tls = data.tls_mode,
-        bunny = if data.bunny_enabled { "Bunny" } else { "None" },
         rows = rows,
         version = env!("CARGO_PKG_VERSION"),
     )
@@ -663,15 +636,6 @@ fn render_deployment_detail(data: &DeploymentDetailData) -> String {
             s.path, s.directory
         ));
     }
-
-    let cdn_html = match &data.cdn_url {
-        Some(url) => format!(
-            r#"<h3>CDN</h3>
-            <p>Bunny Pull Zone: <code>{url}</code></p>
-            <p>Point each hostname CNAME to <code>{url}</code> to activate edge caching.</p>"#
-        ),
-        None => "<h3>CDN</h3><p>Not configured</p>".to_string(),
-    };
 
     format!(
         r#"<!DOCTYPE html>
@@ -711,13 +675,11 @@ fn render_deployment_detail(data: &DeploymentDetailData) -> String {
         <tbody>{static_rows}</tbody>
     </table>
 
-    {cdn_html}
 </body>
 </html>"#,
         name = data.name,
         hostnames = hostnames_html,
         handler_rows = handler_rows,
         static_rows = static_rows,
-        cdn_html = cdn_html,
     )
 }
