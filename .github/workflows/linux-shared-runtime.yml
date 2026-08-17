@@ -110,21 +110,119 @@ jobs:
           grep -Fx coop_app_http_v2 /tmp/coop-app-exports.txt
           grep -Fx perry_module_init /tmp/coop-app-exports.txt
 
+      # Every step below this one runs through `run-in-delegated-cgroup.sh`, so a
+      # failure here skips the entire proof: the loader/integrity/lifecycle
+      # tests and both RSS matrices. It is worth being loud.
+      #
+      # It previously was not. The step was a bare sequence under
+      # `set -euo pipefail` in which the two most likely failures --
+      # `test -f "$parent/cgroup.controllers"` and `grep -qw "$controller"` --
+      # both produce NO output. It exited 1 in about 30 ms having printed
+      # nothing at all, which says only "cgroups, somehow".
+      #
+      # Two real hazards, neither of which the original distinguished:
+      #
+      #  1. The parent derived from /proc/self/cgroup need not be a delegable
+      #     cgroup-v2 directory. Under a cgroup namespace the path is relative
+      #     to the namespace root, and on a hybrid/v1 host there is no unified
+      #     `cgroup.controllers` at all.
+      #  2. A freshly created child inherits ONLY the controllers its parent
+      #     advertises in `cgroup.subtree_control`. If the parent has not
+      #     enabled memory/cpu/pids, the child's `cgroup.controllers` is EMPTY
+      #     and the `grep -qw` loop fails -- silently, and for a reason that
+      #     has nothing to do with the child.
+      #
+      # So: probe explicitly, enable the controllers in the parent before
+      # creating the child, and name the exact unmet condition on failure.
       - name: Delegate a cgroup-v2 subtree for worker enforcement
         shell: bash
         run: |
           set -euo pipefail
+
+          echo "::group::cgroup environment"
+          echo "--- /proc/self/cgroup"; cat /proc/self/cgroup || true
+          echo "--- unified mount"; grep -E 'cgroup2? ' /proc/self/mounts || true
+          echo "::endgroup::"
+
           relative="$(awk -F: '$1 == "0" { print $3 }' /proc/self/cgroup)"
-          parent="/sys/fs/cgroup${relative}"
-          root="${parent}/coop-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          test -f "$parent/cgroup.controllers"
-          sudo mkdir "$root"
-          for controller in memory cpu pids; do
-            grep -qw "$controller" "$root/cgroup.controllers"
+          if [ -z "$relative" ]; then
+            echo "::error::/proc/self/cgroup has no unified (0::) entry."
+            echo "::error::This host is not running a cgroup-v2 unified hierarchy."
+            exit 1
+          fi
+
+          # A candidate parent is one we can actually DELEGATE FROM, which is a
+          # stronger property than having a `cgroup.controllers` file.
+          #
+          # cgroup-v2's "no internal process" rule forbids enabling
+          # `cgroup.subtree_control` on a cgroup that contains processes. On a
+          # GitHub-hosted runner the job runs inside
+          # `system.slice/hosted-compute-agent.service`, which therefore returns
+          # EBUSY ("Device or resource busy") and leaves the child with EMPTY
+          # controllers -- even though the parent advertises all five. The root
+          # cgroup is exempt from that rule, so it is the usable fallback.
+          #
+          # So: try each candidate end to end and keep the first that yields a
+          # child actually carrying memory, cpu and pids. Testing the property
+          # we need beats testing a proxy for it -- the previous version checked
+          # for `cgroup.controllers`, which was present on a parent that could
+          # not delegate, so it never reached the fallback.
+          root=""
+          for candidate in "/sys/fs/cgroup${relative}" "/sys/fs/cgroup"; do
+            [ -f "${candidate}/cgroup.controllers" ] || {
+              echo "candidate rejected (no cgroup.controllers): $candidate"
+              continue
+            }
+            echo "--- trying parent: $candidate"
+            echo "    controllers     : $(cat "$candidate/cgroup.controllers" 2>/dev/null || echo '<unreadable>')"
+            echo "    subtree_control : $(cat "$candidate/cgroup.subtree_control" 2>/dev/null || echo '<empty>')"
+
+            missing=""
+            for controller in memory cpu pids; do
+              grep -qw "$controller" "$candidate/cgroup.controllers" || missing="$missing $controller"
+            done
+            if [ -n "$missing" ]; then
+              echo "    rejected: parent does not offer:$missing"
+              continue
+            fi
+
+            if ! echo '+memory +cpu +pids' | sudo tee "$candidate/cgroup.subtree_control" >/dev/null 2>&1; then
+              echo "    rejected: cannot enable subtree_control (likely EBUSY --"
+              echo "              cgroup-v2 forbids it on a cgroup holding processes)"
+              continue
+            fi
+
+            attempt="${candidate}/coop-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            sudo mkdir -p "$attempt"
+            child_controllers="$(cat "$attempt/cgroup.controllers" 2>/dev/null || true)"
+            echo "    child controllers: ${child_controllers:-<empty>}"
+
+            child_missing=""
+            for controller in memory cpu pids; do
+              grep -qw "$controller" <<<"$child_controllers" || child_missing="$child_missing $controller"
+            done
+            if [ -n "$child_missing" ]; then
+              echo "    rejected: delegated child lacks:$child_missing"
+              sudo rmdir "$attempt" 2>/dev/null || true
+              continue
+            fi
+
+            root="$attempt"
+            echo "    ACCEPTED"
+            break
           done
+
+          if [ -z "$root" ]; then
+            echo "::error::No cgroup-v2 parent could delegate memory+cpu+pids."
+            echo "::error::Tried /sys/fs/cgroup${relative} and /sys/fs/cgroup; see the"
+            echo "::error::per-candidate rejection reasons above."
+            exit 1
+          fi
+
           echo '+memory +cpu +pids' | sudo tee "$root/cgroup.subtree_control" >/dev/null
           sudo chown "$(id -u):$(id -g)" \
             "$root" "$root/cgroup.procs" "$root/cgroup.subtree_control"
+          echo "delegated: $root"
           echo "COOP_DELEGATED_CGROUP_ROOT=${root}" >> "$GITHUB_ENV"
           echo "COOP_TEST_CGROUP_ROOT=${root}/workers" >> "$GITHUB_ENV"
           echo "COOP_BENCH_CGROUP_ROOT=${root}/benchmarks" >> "$GITHUB_ENV"
