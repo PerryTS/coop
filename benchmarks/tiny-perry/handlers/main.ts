@@ -1,10 +1,10 @@
 export function handle(_frame: Buffer): Buffer {
   const body = Buffer.from("ok");
   const output = Buffer.alloc(5 + 2 + 4 + 4 + body.length);
-  output[0] = 0x50;
-  output[1] = 0x43;
-  output[2] = 0x48;
-  output[3] = 0x32;
+  output[0] = 0x43;
+  output[1] = 0x4f;
+  output[2] = 0x4f;
+  output[3] = 0x50;
   output[4] = 2;
 
   let offset = 5;

@@ -764,6 +764,79 @@ pub const MAX_FRAME_SIZE: usize = 16 * 1024 * 1024;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::{Path, PathBuf};
+
+    /// Walk the repo for TypeScript handler sources, skipping build output.
+    fn collect_ts_sources(dir: &Path, out: &mut Vec<PathBuf>) {
+        let skip = ["node_modules", "target", ".git", ".next", "docs"];
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if path.is_dir() {
+                if !skip.iter().any(|s| name == *s) && !name.starts_with('.') {
+                    collect_ts_sources(&path, out);
+                }
+            } else if name.ends_with(".ts") || name.ends_with(".js") {
+                out.push(path);
+            }
+        }
+    }
+
+    /// Decode every `x[0..3] <op> 0xNN` tuple into its four bytes.
+    fn extract_magic_tuples(text: &str, byte: &dyn Fn(&str) -> Option<u8>) -> Vec<[u8; 4]> {
+        let mut found = Vec::new();
+        let bytes: Vec<&str> = text.split("[0]").collect();
+        for window in bytes.iter().skip(1) {
+            let mut magic = [0u8; 4];
+            let mut ok = true;
+            let mut rest = *window;
+            for (index, slot) in magic.iter_mut().enumerate() {
+                let marker = if index == 0 {
+                    String::new()
+                } else {
+                    format!("[{index}]")
+                };
+                if index > 0 {
+                    match rest.find(&marker) {
+                        Some(at) if at < 80 => rest = &rest[at + marker.len()..],
+                        _ => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                let hex_at = match rest.find("0x") {
+                    Some(at) if at < 24 => at,
+                    _ => {
+                        ok = false;
+                        break;
+                    }
+                };
+                let hex: String = rest[hex_at..]
+                    .chars()
+                    .take(4)
+                    .take_while(|c| c.is_ascii_hexdigit() || *c == 'x')
+                    .collect();
+                match byte(&hex) {
+                    Some(value) => *slot = value,
+                    None => {
+                        ok = false;
+                        break;
+                    }
+                }
+                rest = &rest[hex_at + hex.len()..];
+            }
+            if ok {
+                found.push(magic);
+            }
+        }
+        found
+    }
 
     #[test]
     fn binary_http_request_round_trip_preserves_raw_body_and_headers() {
@@ -785,6 +858,65 @@ mod tests {
         let frame = encode_http_request(&request).unwrap();
         assert_eq!(http_request_frame_len(&request).unwrap(), frame.len());
         assert_eq!(decode_http_request(&frame).unwrap(), request);
+    }
+
+    /// Every hand-written handler fixture must encode the CURRENT frame magic.
+    ///
+    /// The magic is duplicated as raw hex bytes across several TypeScript
+    /// handlers with no shared constant, and that is exactly how the Coop
+    /// rebrand shipped a broken tree: the rename was verified by grepping for
+    /// the old *name*, and `output[0] = 0x50; output[1] = 0x43; ...` spells
+    /// `PCH2` without containing the string "PCH2" or "perch". The host was
+    /// updated, the fixtures were not, and `shared_runtime_app_roundtrip`
+    /// failed in CI with "wrong magic or frame kind".
+    ///
+    /// So this decodes the bytes rather than matching text. A future rename
+    /// that misses a fixture fails here instead of in the Linux proof job.
+    #[test]
+    fn every_handler_fixture_encodes_the_current_frame_magic() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("crates/coop-host-abi -> repo root")
+            .to_path_buf();
+
+        // `name[0] <op> 0xNN ... name[3] <op> 0xNN`, assignment or comparison,
+        // across line breaks. Captures the four bytes so they can be DECODED.
+        let byte = |s: &str| u8::from_str_radix(s.trim_start_matches("0x"), 16).ok();
+        let mut checked = 0usize;
+        let mut sources = Vec::new();
+        collect_ts_sources(&repo_root, &mut sources);
+        assert!(
+            !sources.is_empty(),
+            "found no handler sources to scan under {}",
+            repo_root.display()
+        );
+
+        for path in sources {
+            let text = match std::fs::read_to_string(&path) {
+                Ok(text) => text,
+                Err(_) => continue,
+            };
+            for magic in extract_magic_tuples(&text, &byte) {
+                checked += 1;
+                assert_eq!(
+                    magic,
+                    *APP_FRAME_MAGIC,
+                    "{} encodes frame magic {:?}, but the host expects {:?}",
+                    path.display(),
+                    String::from_utf8_lossy(&magic),
+                    String::from_utf8_lossy(APP_FRAME_MAGIC),
+                );
+            }
+        }
+
+        // Without this the test passes vacuously the moment the regex stops
+        // matching -- the same failure mode that let the rebrand through.
+        assert!(
+            checked >= 5,
+            "expected to decode at least 5 magic sites, decoded {checked}; \
+             the scanner has probably stopped matching rather than the tree having changed"
+        );
     }
 
     /// The Coop rebrand changed `APP_FRAME_MAGIC` from `PCH2` to `COOP`, and

@@ -17,7 +17,7 @@ function response(status: number, headerName: string, headerValue: string, body:
   const name = Buffer.from(headerName);
   const value = Buffer.from(headerValue);
   const output = Buffer.alloc(5 + 2 + 4 + 4 + name.length + 4 + value.length + 4 + body.length);
-  output[0] = 0x50; output[1] = 0x43; output[2] = 0x48; output[3] = 0x32; output[4] = 2;
+  output[0] = 0x43; output[1] = 0x4f; output[2] = 0x4f; output[3] = 0x50; output[4] = 2;
   let offset = 5;
   output.writeUInt16BE(status, offset); offset += 2;
   output.writeUInt32BE(1, offset); offset += 4;
@@ -31,8 +31,8 @@ function response(status: number, headerName: string, headerValue: string, body:
 }
 
 export function handle(frame: Buffer): Buffer {
-  if (frame.length < 5 || frame[0] !== 0x50 || frame[1] !== 0x43 ||
-      frame[2] !== 0x48 || frame[3] !== 0x32 || frame[4] !== 1) {
+  if (frame.length < 5 || frame[0] !== 0x43 || frame[1] !== 0x4f ||
+      frame[2] !== 0x4f || frame[3] !== 0x50 || frame[4] !== 1) {
     throw new Error("invalid COOP HTTP request");
   }
   const cursor: Cursor = { offset: 5 };
