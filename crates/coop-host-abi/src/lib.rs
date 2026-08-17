@@ -766,7 +766,16 @@ mod tests {
     use super::*;
     use std::path::{Path, PathBuf};
 
-    /// Walk the repo for TypeScript handler sources, skipping build output.
+    /// Extensions that can carry a handler. `.rs` and `.sh` are here because a
+    /// handler is not always a `.ts` FILE -- the daemon's integration tests
+    /// embed TypeScript in Rust string literals, and the first version of this
+    /// scanner walked only `.ts`/`.js`. It therefore missed nine `PCH2` sites
+    /// in `crates/coop-daemon/tests/*.rs` and the Linux proof failed at
+    /// `auto_compile_from_raw_typescript` -- the same too-narrow-scope mistake
+    /// this test exists to catch, reproduced inside the fix for it.
+    const SCANNED_EXTENSIONS: &[&str] = &[".ts", ".js", ".mjs", ".rs", ".sh", ".md", ".toml"];
+
+    /// Walk the repo for anything that can embed a handler, skipping build output.
     fn collect_ts_sources(dir: &Path, out: &mut Vec<PathBuf>) {
         let skip = ["node_modules", "target", ".git", ".next", "docs"];
         let entries = match std::fs::read_dir(dir) {
@@ -781,7 +790,7 @@ mod tests {
                 if !skip.iter().any(|s| name == *s) && !name.starts_with('.') {
                     collect_ts_sources(&path, out);
                 }
-            } else if name.ends_with(".ts") || name.ends_with(".js") {
+            } else if SCANNED_EXTENSIONS.iter().any(|ext| name.ends_with(ext)) {
                 out.push(path);
             }
         }
@@ -913,8 +922,8 @@ mod tests {
         // Without this the test passes vacuously the moment the regex stops
         // matching -- the same failure mode that let the rebrand through.
         assert!(
-            checked >= 5,
-            "expected to decode at least 5 magic sites, decoded {checked}; \
+            checked >= 14,
+            "expected to decode at least 14 magic sites, decoded {checked}; \
              the scanner has probably stopped matching rather than the tree having changed"
         );
     }

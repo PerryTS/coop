@@ -417,7 +417,7 @@ export async function handle(frame: Buffer): Promise<Buffer> {
   }
   const disposition = marker === 0xfd ? 2 : marker === 0xfe ? 1 : 0;
   const output = Buffer.alloc(6);
-  output[0] = 0x50; output[1] = 0x43; output[2] = 0x48; output[3] = 0x32; output[4] = 6; output[5] = disposition;
+  output[0] = 0x43; output[1] = 0x4f; output[2] = 0x4f; output[3] = 0x50; output[4] = 6; output[5] = disposition;
   return output;
 }
 "#,
@@ -436,7 +436,7 @@ export async function handle(_frame: Buffer): Promise<Buffer> {
   await queue.sendRaw("jobs", raw);
   const body = Buffer.from("queued");
   const output = Buffer.alloc(5 + 2 + 4 + 4 + body.length);
-  output[0] = 0x50; output[1] = 0x43; output[2] = 0x48; output[3] = 0x32; output[4] = 2;
+  output[0] = 0x43; output[1] = 0x4f; output[2] = 0x4f; output[3] = 0x50; output[4] = 2;
   let offset = 5;
   output.writeUInt16BE(202, offset); offset += 2;
   output.writeUInt32BE(0, offset); offset += 4;
@@ -690,7 +690,7 @@ export async function handle(frame: Buffer): Promise<Buffer> {
   }
   const disposition = marker === 0xfd ? 2 : marker === 0xfe ? 1 : 0;
   const output = Buffer.alloc(6);
-  output[0] = 0x50; output[1] = 0x43; output[2] = 0x48; output[3] = 0x32; output[4] = 6; output[5] = disposition;
+  output[0] = 0x43; output[1] = 0x4f; output[2] = 0x4f; output[3] = 0x50; output[4] = 6; output[5] = disposition;
   return output;
 }
 "#,
