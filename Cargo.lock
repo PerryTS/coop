@@ -4739,7 +4739,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "perry-diagnostics"
-version = "0.5.1510"
+version = "0.5.1512"
 dependencies = [
  "serde",
  "serde_json",
@@ -4747,11 +4747,11 @@ dependencies = [
 
 [[package]]
 name = "perry-dispatch"
-version = "0.5.1510"
+version = "0.5.1512"
 
 [[package]]
 name = "perry-ffi"
-version = "0.5.1510"
+version = "0.5.1512"
 dependencies = [
  "dashmap",
  "once_cell",
@@ -4759,7 +4759,7 @@ dependencies = [
 
 [[package]]
 name = "perry-parser"
-version = "0.5.1510"
+version = "0.5.1512"
 dependencies = [
  "anyhow",
  "perry-diagnostics",
@@ -4771,7 +4771,7 @@ dependencies = [
 
 [[package]]
 name = "perry-runtime"
-version = "0.5.1510"
+version = "0.5.1512"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4813,7 +4813,7 @@ dependencies = [
 
 [[package]]
 name = "perry-stdlib"
-version = "0.5.1510"
+version = "0.5.1512"
 dependencies = [
  "aes 0.8.4",
  "aes 0.9.2",
@@ -4905,7 +4905,7 @@ dependencies = [
 
 [[package]]
 name = "perry-updater"
-version = "0.5.1510"
+version = "0.5.1512"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

@@ -329,7 +329,33 @@ async fn measure_in_process_startup_and_rss() {
     }
 }
 
+/// Which compiled application this benchmark replicates.
+///
+/// Defaults to the tiny dependency-free app, which is what Linux CI has always
+/// measured. `COOP_BENCH_APP_LIBRARY` points it at any other published
+/// package -- in practice the Next.js fixture, produced by
+/// `scripts/prepare-next-benchmark.sh`:
+///
+/// ```text
+/// scripts/prepare-next-benchmark.sh
+/// COOP_BENCH_APP_LIBRARY=target/next-benchmark/coop-run/compiled/next-bench/<pkg>/app.so \
+///   cargo test --release -p coop-daemon --test resource_benchmark \
+///   measure_in_process_startup_and_rss -- --ignored --nocapture
+/// ```
+///
+/// Replicating the Next app is meaningful because Perry compiles the Next
+/// route INTO the application dylib: at load time it needs the shared
+/// providers and nothing else, no `node_modules`, so N copies measure the real
+/// marginal cost of an Nth Next deployment on one box.
 fn locate_prepared_app(workspace: &Path, extension: &str) -> PathBuf {
+    if let Some(explicit) = std::env::var_os("COOP_BENCH_APP_LIBRARY") {
+        let path = PathBuf::from(explicit);
+        assert!(
+            path.is_file(),
+            "COOP_BENCH_APP_LIBRARY does not name a file: {path:?}"
+        );
+        return path;
+    }
     let compiled = workspace.join("target/dynamic-smoke/compiled");
     let legacy = compiled.join(format!("test1.{extension}"));
     let namespace = compiled.join("test1");
