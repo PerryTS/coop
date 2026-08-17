@@ -65,10 +65,10 @@ function readText(cursor: FrameCursor): string {
 export function handle(frame: Buffer): Buffer {
   if (
     frame.length < 5 ||
-    frame[0] !== 0x50 ||
-    frame[1] !== 0x43 ||
-    frame[2] !== 0x48 ||
-    frame[3] !== 0x32 ||
+    frame[0] !== 0x43 ||
+    frame[1] !== 0x4f ||
+    frame[2] !== 0x4f ||
+    frame[3] !== 0x50 ||
     frame[4] !== 1
   ) {
     throw new Error("invalid Coop HTTP frame");
@@ -104,10 +104,10 @@ export function handle(frame: Buffer): Buffer {
   const output = Buffer.alloc(
     5 + 2 + 4 + 4 + headerName.length + 4 + contentTypeBytes.length + 4 + responseBody.length,
   );
-  output[0] = 0x50;
-  output[1] = 0x43;
-  output[2] = 0x48;
-  output[3] = 0x32;
+  output[0] = 0x43;
+  output[1] = 0x4f;
+  output[2] = 0x4f;
+  output[3] = 0x50;
   output[4] = 2;
   let offset = 5;
   output.writeUInt16BE(200, offset);
