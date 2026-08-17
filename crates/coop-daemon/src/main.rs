@@ -3,7 +3,7 @@
 //! Checkpoint 2 scope: bootstrap + runtime.toml parse + axum HTTP listener
 //! + host-based routing + tower-http ServeDir + notify-based deployment
 //! watcher + drain-and-replace worker lifecycle. No TLS yet (Checkpoint
-//! 3), no Bunny CDN (Checkpoint 4), no admin UI / metrics / schema
+//! 3), no admin UI / metrics / schema
 //! provisioning (Checkpoint 5).
 //!
 //! The bare minimum flow:
@@ -22,13 +22,11 @@
 
 mod admin;
 mod artifacts;
-mod cdn;
 mod cgroup;
 mod config;
 mod deployments;
 mod listener;
 mod metrics;
-mod proxy_headers;
 mod router;
 mod schema;
 mod signals;

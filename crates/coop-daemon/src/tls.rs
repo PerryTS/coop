@@ -2,7 +2,7 @@
 //!
 //! When `tls.mode = "acme"` in runtime.toml, the daemon uses `rustls-acme`
 //! to automatically provision and renew Let's Encrypt certificates for all
-//! non-Bunny-fronted hostnames. TLS-ALPN-01 challenges are handled inline
+//! every configured hostname. TLS-ALPN-01 challenges are handled inline
 //! on the `:443` listener (no separate port-80 challenge path needed,
 //! though we keep `:80` for HTTP→HTTPS redirects).
 //!
@@ -16,13 +16,10 @@
 //! loaded. When `tls.mode = "off"`, TLS is disabled (development mode or
 //! behind a CDN/proxy that terminates TLS).
 //!
-//! Checkpoint 3 ships the ACME integration. Checkpoint 4 adds the Bunny
-//! CDN awareness that lets the daemon skip ACME for Bunny-fronted
-//! hostnames (Bunny handles TLS at the edge for those).
+//! Checkpoint 3 ships the ACME integration.
 
 use crate::config::{RuntimeConfig, TlsMode};
 use anyhow::{Context, Result};
-use std::sync::Arc;
 
 /// Check whether TLS is enabled and valid. Returns a descriptive string
 /// for logging.
@@ -98,7 +95,7 @@ pub fn validate_tls_config(config: &RuntimeConfig) -> Result<()> {
 //
 // 1. At daemon startup, build `AcmeConfig` with the ACME directory URL,
 //    contact email, and cache directory.
-// 2. For each loaded deployment, collect the non-Bunny hostnames.
+// 2. For each loaded deployment, collect its hostnames.
 // 3. Feed them as `domains` into `AcmeConfig`.
 // 4. Build an `AcmeAcceptor` that wraps a `TcpListener` on `:443`.
 // 5. The acceptor handles TLS-ALPN-01 challenges inline; all other TLS
@@ -110,20 +107,14 @@ pub fn validate_tls_config(config: &RuntimeConfig) -> Result<()> {
 // swapping from `axum::serve(TcpListener)` to a manual accept loop that
 // feeds connections through the ACME acceptor.
 
-/// Collect all non-Bunny hostnames from the current deployment set. These
-/// are the domains coop's own ACME manages certs for.
+/// Collect all hostnames from the current deployment set. These are the
+/// domains coop's own ACME manages certs for.
 pub fn collect_acme_domains(
-    config: &RuntimeConfig,
+    _config: &RuntimeConfig,
     deployments: &[crate::config::DeploymentConfig],
 ) -> Vec<String> {
-    let bunny_enabled = config.cdn.bunny.is_some();
     let mut domains = Vec::new();
     for dep in deployments {
-        let dep_bunny = bunny_enabled && dep.cdn.enabled;
-        if dep_bunny {
-            // Bunny handles TLS at the edge for this deployment's domains.
-            continue;
-        }
         for d in &dep.hosts.domains {
             if !d.is_empty() {
                 domains.push(d.to_lowercase());
@@ -158,21 +149,22 @@ mod tests {
         assert!(err.to_string().contains("acme_contact"));
     }
 
+    /// Every configured domain is now ACME-managed.
+    ///
+    /// This previously skipped domains fronted by the Bunny CDN, on the
+    /// grounds that the edge terminated TLS for them. With the CDN removed
+    /// there is no edge, so Coop must obtain a certificate for every
+    /// hostname it serves -- skipping any would leave it unable to answer
+    /// HTTPS for that host.
     #[test]
-    fn collect_acme_domains_skips_bunny() {
-        let mut cfg = minimal_config();
-        cfg.cdn.bunny = Some(BunnyConfig {
-            api_key: "test".to_string(),
-            default_cache_duration_secs: 86400,
-        });
-
+    fn collect_acme_domains_covers_every_configured_domain() {
+        let cfg = minimal_config();
         let deps = vec![
             DeploymentConfig {
                 name: "landing".to_string(),
                 hosts: HostsConfig {
                     domains: vec!["landing.com".to_string()],
                 },
-                cdn: DeploymentCdnConfig { enabled: true },
                 ..Default::default()
             },
             DeploymentConfig {
@@ -180,14 +172,14 @@ mod tests {
                 hosts: HostsConfig {
                     domains: vec!["api.example.com".to_string()],
                 },
-                cdn: DeploymentCdnConfig { enabled: false },
                 ..Default::default()
             },
         ];
 
         let domains = collect_acme_domains(&cfg, &deps);
-        // landing.com is Bunny-fronted (opted in) → skipped
-        // api.example.com opted out of CDN → managed by ACME
-        assert_eq!(domains, vec!["api.example.com".to_string()]);
+        assert_eq!(
+            domains,
+            vec!["api.example.com".to_string(), "landing.com".to_string()]
+        );
     }
 }

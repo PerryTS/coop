@@ -40,7 +40,7 @@ pub struct ListenerState {
 /// In TLS mode "manual": two listeners — HTTP redirect + HTTPS with
 ///   static certs.
 ///
-/// The origin listener (`:8081` for Bunny pull traffic) is added in
+/// The origin listener (`:8081`) is added in
 /// Checkpoint 4.
 pub async fn serve(
     runtime_cfg: Arc<RuntimeConfig>,

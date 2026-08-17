@@ -99,7 +99,7 @@ export class CoopRequest {
   }
 
   // Get the client's IP address (respects trusted proxy headers when
-  // the request came through Bunny).
+  // the request came through a proxy).
   ip(): string {
     return this.remoteAddr;
   }
@@ -147,7 +147,7 @@ export function jsonResponse(status: number, data: any): string {
   return respond(status, { "content-type": "application/json" }, body);
 }
 
-// Set cache header for CDN edge caching.
+// Set cache header for downstream/edge caching.
 export function withCacheHeaders(
   responseJson: string,
   maxAgeSecs: number
