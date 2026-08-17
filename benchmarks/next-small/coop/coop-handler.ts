@@ -3,14 +3,35 @@ import { GET } from "../app/api/benchmark/route";
 
 /**
  * Adapt Coop's compact wire protocol to the same Next.js App Route function
- * used by the production Node build. This deliberately invokes the userland
- * GET export instead of Next's private AppRouteRouteModule.handle: Perry does
- * not yet implement all of that method's AsyncLocalStorage work-store
- * machinery. Next still supplies NextRequest, URL/query parsing, the route
- * function, and NextResponse construction.
+ * the production Node build serves.
+ *
+ * WHAT CHANGED, AND WHY IT MATTERS FOR EVERY NUMBER THIS FIXTURE PRODUCES.
+ *
+ * This adapter used to call `GET(nextRequest)`, throw the result away, and
+ * emit a hardcoded 200 with a hardcoded body and a hardcoded checksum. It ran
+ * the framework work and then fabricated the answer. Any measurement taken
+ * against it was a lower bound on Perry's cost by construction, and no
+ * assertion about the response could fail, because the response never came
+ * from Next.
+ *
+ * That was not dishonesty in the original, it was a workaround: the Perry pin
+ * of the day could not carry a `Response`'s status, headers, or body across
+ * this imported-function boundary. #8036 and #8038 fixed exactly that, and the
+ * pin now includes them, so the workaround can go.
+ *
+ * The response is now READ FROM NEXT: status, headers and body all come from
+ * the `NextResponse` the route returned. If the transport regresses, this
+ * fixture fails loudly rather than quietly reporting a fabricated 200 -- which
+ * is the property that makes it worth benchmarking at all.
+ *
+ * Still a lower bound in one respect: it invokes the userland `GET` export
+ * rather than Next's private `AppRouteRouteModule.handle`, so the work-store
+ * machinery around the route is not exercised. That is the next step, and it
+ * needs the full production build output rather than the source route. Until
+ * then this fixture must not be described as full Next hosting.
  */
 
-function executeNextRoute(
+async function executeNextRoute(
   rawMethod: string,
   path: string,
   query: string,
@@ -18,15 +39,10 @@ function executeNextRoute(
   host: string,
   headers: Record<string, string>,
   requestBody: Buffer,
-): Buffer {
-  const url = `${scheme}://${host}${path}${
-    query === "" ? "" : `?${query}`
-  }`;
+): Promise<{ status: number; headers: [string, string][]; body: Buffer }> {
+  const url = `${scheme}://${host}${path}${query === "" ? "" : `?${query}`}`;
   const method = rawMethod.toUpperCase();
-  const init: RequestInit & { duplex?: "half" } = {
-    method,
-    headers,
-  };
+  const init: RequestInit & { duplex?: "half" } = { method, headers };
 
   if (method !== "GET" && method !== "HEAD" && requestBody.length !== 0) {
     init.body = requestBody;
@@ -34,16 +50,27 @@ function executeNextRoute(
   }
 
   const nextRequest = new NextRequest(url, init);
-  // Execute the real route, including NextResponse.json construction. Perry
-  // cannot yet carry the returned Response headers/body across this imported
-  // function boundary, so emit the deterministic benchmark bytes directly
-  // through Coop's synchronous ABI after the framework work has completed.
-  GET(nextRequest);
-  return Buffer.from(JSON.stringify({
-    runtime: "next",
-    iterations: 100,
-    checksum: 3_726_872_593,
-  }));
+  const response = await GET(nextRequest);
+
+  // Refuse to invent a response. A route that returned nothing usable is a
+  // failure of the thing under test, and reporting a synthetic 200 here is
+  // how the previous version made its own regressions invisible.
+  if (response === undefined || response === null) {
+    throw new Error("Next route returned no Response");
+  }
+
+  const status = response.status;
+  if (typeof status !== "number" || status === 0) {
+    throw new Error(`Next route returned a Response with no usable status: ${status}`);
+  }
+
+  const collected: [string, string][] = [];
+  response.headers.forEach((value: string, name: string) => {
+    collected.push([name, value]);
+  });
+
+  const text = await response.text();
+  return { status, headers: collected, body: Buffer.from(text) };
 }
 
 type FrameCursor = { frame: Buffer; offset: number };
@@ -62,7 +89,7 @@ function readText(cursor: FrameCursor): string {
 }
 
 /** Required compact COOP application-library ABI. */
-export function handle(frame: Buffer): Buffer {
+export async function handle(frame: Buffer): Promise<Buffer> {
   if (
     frame.length < 5 ||
     frame[0] !== 0x43 ||
@@ -88,7 +115,8 @@ export function handle(frame: Buffer): Buffer {
   }
   const bodyLength = readU32(cursor);
   const requestBody = frame.subarray(cursor.offset, cursor.offset + bodyLength);
-  const responseBody = executeNextRoute(
+
+  const result = await executeNextRoute(
     method,
     path,
     query,
@@ -98,32 +126,38 @@ export function handle(frame: Buffer): Buffer {
     requestBody,
   );
 
-  const contentType = "application/json";
-  const contentTypeBytes = Buffer.from(contentType);
-  const headerName = Buffer.from("content-type");
-  const output = Buffer.alloc(
-    5 + 2 + 4 + 4 + headerName.length + 4 + contentTypeBytes.length + 4 + responseBody.length,
-  );
+  let size = 5 + 2 + 4 + 4 + result.body.length;
+  const encodedHeaders: [Buffer, Buffer][] = [];
+  for (const [name, value] of result.headers) {
+    const nameBytes = Buffer.from(name);
+    const valueBytes = Buffer.from(value);
+    encodedHeaders.push([nameBytes, valueBytes]);
+    size += 4 + nameBytes.length + 4 + valueBytes.length;
+  }
+
+  const output = Buffer.alloc(size);
   output[0] = 0x43;
   output[1] = 0x4f;
   output[2] = 0x4f;
   output[3] = 0x50;
   output[4] = 2;
   let offset = 5;
-  output.writeUInt16BE(200, offset);
+  output.writeUInt16BE(result.status, offset);
   offset += 2;
-  output.writeUInt32BE(1, offset);
+  output.writeUInt32BE(encodedHeaders.length, offset);
   offset += 4;
-  output.writeUInt32BE(headerName.length, offset);
+  for (const [nameBytes, valueBytes] of encodedHeaders) {
+    output.writeUInt32BE(nameBytes.length, offset);
+    offset += 4;
+    nameBytes.copy(output, offset);
+    offset += nameBytes.length;
+    output.writeUInt32BE(valueBytes.length, offset);
+    offset += 4;
+    valueBytes.copy(output, offset);
+    offset += valueBytes.length;
+  }
+  output.writeUInt32BE(result.body.length, offset);
   offset += 4;
-  headerName.copy(output, offset);
-  offset += headerName.length;
-  output.writeUInt32BE(contentTypeBytes.length, offset);
-  offset += 4;
-  contentTypeBytes.copy(output, offset);
-  offset += contentTypeBytes.length;
-  output.writeUInt32BE(responseBody.length, offset);
-  offset += 4;
-  responseBody.copy(output, offset);
+  result.body.copy(output, offset);
   return output;
 }

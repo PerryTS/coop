@@ -8,11 +8,23 @@ server shape described in the repository's `BENCHMARKS.md`.
 - `coop/coop-handler.ts` adapts Coop's synchronous wire ABI to the route.
 - `npm run build` creates the unmodified production Next standalone server.
 
-The Perry adapter is intentionally a lower bound, not full Next hosting. It
-constructs public Next request/response objects and runs the same route work,
-but the pinned Perry cannot yet transport all request and response values across
-the module boundaries used by Next. The exact omitted behavior and measured
-results are documented in `../../BENCHMARKS.md`.
+The Perry adapter is still a lower bound, but a smaller one than it was, and
+the distinction matters when reading any number it produces.
+
+It used to call the route, **discard the result**, and emit a hardcoded 200
+with a hardcoded body. It ran the framework work and then fabricated the
+answer, so no assertion about the response could fail. That was a workaround
+for a pin that could not carry a `Response`'s status, headers or body across
+the imported-function boundary; #8036 and #8038 fixed that and the pin now
+includes them, so `coop-handler.ts` now reads status, headers and body from
+the `NextResponse` the route actually returned, and throws if it gets nothing
+usable.
+
+What remains a lower bound: it invokes the userland `GET` export rather than
+Next's private `AppRouteRouteModule.handle`, so the work-store machinery
+around the route is not exercised. Driving `routeModule.handle` needs the full
+production build output rather than the source route. **Until that lands, do
+not describe this fixture as full Next hosting.**
 
 Build the Node form from this directory:
 
