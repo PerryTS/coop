@@ -248,6 +248,13 @@ jobs:
             cargo test -p coop-worker --test plugin_roundtrip repeated_load_dispatch_shutdown_reclaims_executor_threads -- --ignored --nocapture
             cargo test -p coop-daemon --test auto_compile -- --nocapture
             cargo test -p coop-worker --test plugin_roundtrip hundred_preloaded_apps_dispatch -- --ignored --nocapture
+            # The Next.js fixture, which until now ran in NO workflow at all.
+            # It is excluded from fast-check as a provider suite (it needs built
+            # provider images) and was never added here, so the only test that
+            # exercises a real framework route was gated by nothing. A proof
+            # that never runs its most interesting case is the failure mode this
+            # repository keeps finding in its own gates.
+            cargo test -p coop-worker --test binary_http_roundtrip -- --nocapture
           '
 
       - name: Linux Perry 1/10/100 RSS, PSS, private-dirty, and cgroup evidence
