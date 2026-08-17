@@ -25,7 +25,6 @@
 //!   deployment; rebuilt during reload
 
 use crate::artifacts::{ArtifactStatus, ArtifactStore, PACKAGE_CONFIG_FILE};
-use crate::cdn;
 use crate::cgroup::{WorkerCgroup, WorkerCgroupStats};
 use crate::config::{
     CronLatePolicy, CronOverlapPolicy, DeploymentConfig, ExecutionMode, RuntimeConfig,
@@ -2204,8 +2203,6 @@ impl DeploymentSupervisor {
             return Err(error).context("recording atomic deployment artifact state");
         }
 
-        let cdn_enabled = replacement.config.cdn.enabled;
-        let config_for_cdn = replacement.config.clone();
         let mut old = {
             let mut live = self.live.write().await;
             live.insert(name.to_string(), replacement)
@@ -2224,44 +2221,6 @@ impl DeploymentSupervisor {
 
         if let Some(old) = old {
             self.drain_live_deployment(old).await;
-            if let Some(bunny_cfg) = &self.runtime_cfg.cdn.bunny {
-                if let Err(e) = cdn::purge_deployment(bunny_cfg, name).await {
-                    warn!(
-                        deployment = %name,
-                        error = ?e,
-                        "CDN cache purge failed (stale content may persist until TTL expires)"
-                    );
-                }
-            }
-        }
-
-        // Bunny CDN: reconcile the Pull Zone for this deployment.
-        if let Some(bunny_cfg) = &self.runtime_cfg.cdn.bunny {
-            if cdn_enabled {
-                let origin_port: u16 = self
-                    .runtime_cfg
-                    .http
-                    .listen_origin
-                    .rsplit(':')
-                    .next()
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(8081);
-                // Use the box's public hostname as origin. In production
-                // this comes from runtime.toml; for now fall back to
-                // 127.0.0.1 (development).
-                let origin_host = "127.0.0.1";
-
-                if let Err(e) =
-                    cdn::reconcile_deployment(bunny_cfg, &config_for_cdn, origin_host, origin_port)
-                        .await
-                {
-                    warn!(
-                        deployment = %name,
-                        error = ?e,
-                        "Bunny CDN reconciliation failed (deployment still works without CDN)"
-                    );
-                }
-            }
         }
 
         if rebuild_router {
@@ -2366,34 +2325,6 @@ impl DeploymentSupervisor {
             let _ = activate.send(());
         }
 
-        if let Some(bunny_cfg) = &self.runtime_cfg.cdn.bunny {
-            if let Err(error) = cdn::purge_deployment(bunny_cfg, name).await {
-                warn!(
-                    deployment = name,
-                    ?error,
-                    "CDN cache purge failed after runtime reuse"
-                );
-            }
-            if config.cdn.enabled {
-                let origin_port: u16 = self
-                    .runtime_cfg
-                    .http
-                    .listen_origin
-                    .rsplit(':')
-                    .next()
-                    .and_then(|value| value.parse().ok())
-                    .unwrap_or(8081);
-                if let Err(error) =
-                    cdn::reconcile_deployment(bunny_cfg, &config, "127.0.0.1", origin_port).await
-                {
-                    warn!(
-                        deployment = name,
-                        ?error,
-                        "CDN reconciliation failed after runtime reuse"
-                    );
-                }
-            }
-        }
         if rebuild_router {
             self.rebuild_router_state().await;
         }
@@ -6235,7 +6166,7 @@ impl DeploymentSupervisor {
     }
 
     /// Remove a deployment entirely (directory deleted, or explicit
-    /// admin action). Drains the worker, tears down the Bunny Pull Zone,
+    /// admin action). Drains the worker,
     /// and rebuilds router state.
     pub async fn remove_deployment(&self, name: &str) {
         let operation = self.deployment_operation(name).await;
@@ -6249,17 +6180,6 @@ impl DeploymentSupervisor {
         }
         crate::metrics::set_deployment_isolation(name, false, false);
         crate::metrics::set_deployment_shard(name, None);
-
-        // Bunny CDN: tear down the Pull Zone.
-        if let Some(bunny_cfg) = &self.runtime_cfg.cdn.bunny {
-            if let Err(e) = cdn::teardown_deployment(bunny_cfg, name).await {
-                warn!(
-                    deployment = %name,
-                    error = ?e,
-                    "failed to tear down Bunny Pull Zone"
-                );
-            }
-        }
 
         self.rebuild_router_state().await;
     }

@@ -42,9 +42,6 @@ pub struct RuntimeConfig {
     pub tls: TlsConfig,
 
     #[serde(default)]
-    pub cdn: CdnConfig,
-
-    #[serde(default)]
     pub admin: AdminConfig,
 
     #[serde(default)]
@@ -393,7 +390,7 @@ impl ExecutionMode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpConfig {
     /// Public HTTP listener. Handles inbound plain HTTP, ACME HTTP-01
-    /// challenges, and redirects to HTTPS for non-Bunny hostnames.
+    /// challenges, and redirects to HTTPS.
     #[serde(default = "default_http_listen")]
     pub listen_http: String,
 
@@ -402,11 +399,14 @@ pub struct HttpConfig {
     #[serde(default = "default_https_listen")]
     pub listen_https: String,
 
-    /// Private origin listener for CDN pull traffic. Bunny's edge calls
-    /// this port on a cache miss to fetch content from the box. Trusted
-    /// proxy headers (`X-Forwarded-*`) are honored here only when the
-    /// source IP is in the configured Bunny allowlist. **Must not be
-    /// exposed to the public internet**; firewall it to CDN edge IPs only.
+    /// Private origin listener, retained for a future reverse-proxy or CDN
+    /// integration. **Must not be exposed to the public internet.**
+    ///
+    /// Note: nothing currently enforces trusted-proxy handling on this port.
+    /// The previous doc claimed `X-Forwarded-*` was honored only from an edge
+    /// allowlist; that allowlist existed but was never wired to the listener,
+    /// and `proxy_headers::extract` is not called anywhere. Do not rely on
+    /// forwarded headers being validated here until that is implemented.
     #[serde(default = "default_origin_listen")]
     pub listen_origin: String,
 }
@@ -563,27 +563,6 @@ pub enum TlsMode {
     Manual,
 }
 
-/// Box-wide CDN configuration. Bunny is the only supported provider in v0.
-/// If `cdn.bunny.api_key` is set, every deployment is opted into Bunny by
-/// default (individual deployments can opt out via `coop.toml` `[cdn]
-/// enabled = false`). See Checkpoint 4 for implementation.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct CdnConfig {
-    #[serde(default)]
-    pub bunny: Option<BunnyConfig>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BunnyConfig {
-    pub api_key: String,
-    #[serde(default = "default_bunny_cache_duration")]
-    pub default_cache_duration_secs: u32,
-}
-
-fn default_bunny_cache_duration() -> u32 {
-    86400 // 1 day
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdminConfig {
     #[serde(default = "default_admin_path")]
@@ -738,7 +717,6 @@ impl Default for RuntimeConfig {
             queue_service: QueueServiceConfig::default(),
             redis: None,
             tls: TlsConfig::default(),
-            cdn: CdnConfig::default(),
             admin: AdminConfig::default(),
             logs: LogsConfig::default(),
         }
@@ -768,12 +746,6 @@ pub struct DeploymentConfig {
     /// allowed for development).
     #[serde(default)]
     pub hosts: HostsConfig,
-
-    /// CDN opt-out. If Bunny is configured at the box level (runtime.toml
-    /// `[cdn.bunny]`), every deployment is opted IN by default. Set
-    /// `[cdn] enabled = false` to opt this deployment out.
-    #[serde(default)]
-    pub cdn: DeploymentCdnConfig,
 
     #[serde(default)]
     pub database: Option<DeploymentDatabaseConfig>,
@@ -864,24 +836,6 @@ impl IsolationClass {
 pub struct HostsConfig {
     #[serde(default)]
     pub domains: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeploymentCdnConfig {
-    /// Defaults to true; set false to opt out if Bunny is configured at
-    /// the box level.
-    #[serde(default = "default_cdn_enabled")]
-    pub enabled: bool,
-}
-
-fn default_cdn_enabled() -> bool {
-    true
-}
-
-impl Default for DeploymentCdnConfig {
-    fn default() -> Self {
-        Self { enabled: true }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1432,7 +1386,6 @@ impl Default for DeploymentConfig {
             name: String::new(),
             version: None,
             hosts: HostsConfig::default(),
-            cdn: DeploymentCdnConfig::default(),
             database: None,
             isolation: DeploymentIsolationConfig::default(),
             handlers: Vec::new(),
@@ -1449,6 +1402,38 @@ impl Default for DeploymentConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A box still carrying `[cdn.bunny]` must keep starting.
+    ///
+    /// Removing the CDN integration deleted `CdnConfig`/`BunnyConfig`, and
+    /// every deployed `runtime.toml` that configured Bunny still has those
+    /// keys on disk. `RuntimeConfig` does not use `deny_unknown_fields`, so
+    /// they are ignored rather than fatal -- the daemon starts and simply has
+    /// no CDN. That is the intended migration, but it holds only as long as
+    /// nothing adds `deny_unknown_fields`, which would turn every legacy
+    /// config into a daemon that refuses to boot. This pins it.
+    #[test]
+    fn a_legacy_config_with_bunny_cdn_keys_still_loads() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("runtime.toml");
+        std::fs::write(
+            &path,
+            r#"
+[http]
+listen_http = "127.0.0.1:8080"
+
+[paths]
+deployments_dir = "/tmp/d"
+
+[cdn.bunny]
+api_key = "legacy-key-from-before-the-cdn-was-removed"
+default_cache_duration_secs = 86400
+"#,
+        )
+        .unwrap();
+        let cfg = RuntimeConfig::load(&path).expect("stale [cdn.bunny] keys must not be fatal");
+        assert_eq!(cfg.http.listen_http, "127.0.0.1:8080");
+    }
 
     #[test]
     fn loads_minimal_runtime_toml() {
@@ -1634,7 +1619,6 @@ path = "/"
         assert_eq!(cfg.handlers[0].path, "/contact");
         assert_eq!(cfg.static_blocks.len(), 1);
         assert_eq!(cfg.static_blocks[0].path, "/");
-        assert_eq!(cfg.cdn.enabled, true);
         assert_eq!(cfg.isolation.class, IsolationClass::Inherit);
     }
 
