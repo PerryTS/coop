@@ -4,9 +4,15 @@ export const dynamic = "force-dynamic";
 
 export function GET(_request: NextRequest) {
   // Keep the workload fixed so both servers execute exactly the same route
-  // work. Perry 0.5.1503 does not yet reliably preserve an imported handler's
-  // request argument or NextURL.searchParams, so query parsing is deliberately
-  // outside this first server-efficiency benchmark.
+  // work.
+  //
+  // This used to be a workaround: the Perry pin of the day could not reliably
+  // preserve an imported handler's request argument or NextURL.searchParams,
+  // so query parsing had to stay out. #8036 lifted that, and the pin now
+  // includes it. The fixed workload stays anyway, for the original reason
+  // rather than the incidental one -- a benchmark whose work depends on the
+  // request is not comparable run to run. Query parsing belongs in a
+  // correctness fixture, not this one.
   const iterations = 100;
 
   let checksum = 0x811c9dc5;

@@ -8,11 +8,34 @@ server shape described in the repository's `BENCHMARKS.md`.
 - `coop/coop-handler.ts` adapts Coop's synchronous wire ABI to the route.
 - `npm run build` creates the unmodified production Next standalone server.
 
-The Perry adapter is intentionally a lower bound, not full Next hosting. It
-constructs public Next request/response objects and runs the same route work,
-but the pinned Perry cannot yet transport all request and response values across
-the module boundaries used by Next. The exact omitted behavior and measured
-results are documented in `../../BENCHMARKS.md`.
+The Coop adapter now drives Next's own `AppRouteRouteModule.handle` from the
+production build, not the userland `GET` export. `handle` is what sets up the
+AsyncLocalStorage work stores, resolves the handler for the method, applies
+`fetchCache`, and builds the response; calling `GET` runs the route body and
+skips all of it.
+
+Two things this fixture previously got wrong, both of which invalidated every
+number it produced:
+
+1. It called `GET(request)`, **threw the result away**, and emitted a hardcoded
+   200 with a hardcoded body. It ran the framework work and then fabricated the
+   answer, so no assertion about the response could ever fail.
+2. It shipped a `.next-production-bundle/` **checked into git**, which had
+   drifted from `app/api/benchmark/route.ts` — the committed copy parsed
+   `nextUrl.searchParams`, clamped iterations to 1..10000, set an
+   `x-perch-benchmark-body` header, and was emitted by webpack while the
+   current toolchain emits turbopack. Coop would have been measured against
+   different code than the Node build compiles from the same source.
+
+The bundle is now **built**, never committed, and `prepare-next-benchmark.sh`
+rebuilds it whenever `route.ts` is newer. A build output living in git can only
+drift again, silently, and (2) is what that costs.
+
+Import order in `coop-handler.ts` is load-bearing: the route bundle must be
+imported **before** `next/server`, because loading it installs Next's require
+hook. Reverse them and `next/server` resolves to the edge build, whose module
+init throws `Invariant: AsyncLocalStorage accessed in runtime where it is not
+available`.
 
 Build the Node form from this directory:
 
