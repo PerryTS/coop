@@ -193,7 +193,7 @@ max_queue_payload_bytes = 1024
 export function handle(frame: Buffer): Buffer {
   if (frame.length < 5 || frame[4] !== 3) throw new Error("invalid cron frame");
   const output = Buffer.alloc(5);
-  output[0] = 0x50; output[1] = 0x43; output[2] = 0x48; output[3] = 0x32; output[4] = 4;
+  output[0] = 0x43; output[1] = 0x4f; output[2] = 0x4f; output[3] = 0x50; output[4] = 4;
   return output;
 }
 "#,
@@ -206,7 +206,7 @@ export function handle(frame: Buffer): Buffer {
 export function handle(frame: Buffer): Buffer {
   if (frame.length < 5 || frame[4] !== 5) throw new Error("invalid queue frame");
   const output = Buffer.alloc(6);
-  output[0] = 0x50; output[1] = 0x43; output[2] = 0x48; output[3] = 0x32; output[4] = 6; output[5] = 0;
+  output[0] = 0x43; output[1] = 0x4f; output[2] = 0x4f; output[3] = 0x50; output[4] = 6; output[5] = 0;
   return output;
 }
 "#,
@@ -220,7 +220,7 @@ export function handle(_frame: Buffer): Buffer {
   const name = Buffer.from("content-type");
   const value = Buffer.from("text/plain");
   const output = Buffer.alloc(5 + 2 + 4 + 4 + name.length + 4 + value.length + 4 + body.length);
-  output[0] = 0x50; output[1] = 0x43; output[2] = 0x48; output[3] = 0x32; output[4] = 2;
+  output[0] = 0x43; output[1] = 0x4f; output[2] = 0x4f; output[3] = 0x50; output[4] = 2;
   let offset = 5;
   output.writeUInt16BE(200, offset); offset += 2;
   output.writeUInt32BE(1, offset); offset += 4;
