@@ -281,6 +281,59 @@ jobs:
               2>&1 | tee linux-node-resource-results.txt
           '
 
+      # The density matrices above measure the TINY dependency-free app, which
+      # shares almost everything through the providers and therefore sits near
+      # the floor for marginal cost per deployment. The architecture's claim is
+      # about real applications, so measure one.
+      #
+      # This is meaningful rather than a trick: Perry compiles the Next route
+      # INTO the application dylib, so a loaded copy needs the shared providers
+      # and nothing else -- no node_modules, no build output. N copies are the
+      # genuine marginal cost of an Nth Next deployment on one box.
+      #
+      # Node is required to BUILD the fixture (`npm ci` + `next build`), never
+      # to run it. `prepare-next-benchmark.sh` rebuilds the production route
+      # whenever the source is newer, because a committed build output silently
+      # drifted from its source once already.
+      - name: Set up Node for the Next fixture build
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build and publish the Next.js fixture through Coop
+        shell: bash
+        run: |
+          set -euo pipefail
+          ( cd benchmarks/next-small && npm ci --no-audit --no-fund )
+          scripts/prepare-next-benchmark.sh
+
+      - name: Linux Next.js 1/10/100 RSS, PSS, private-dirty, and cgroup evidence
+        shell: bash
+        env:
+          COOP_BENCH_APP_COUNTS: 1,10,100
+          COOP_BENCH_TRIALS: "2"
+          COOP_BENCH_REQUESTS: "2000"
+          COOP_BENCH_PRELOAD_CONCURRENCY: "4"
+        run: |
+          set -euo pipefail
+          # Resolve the package the daemon just published. Named explicitly so a
+          # missing fixture fails here, rather than silently measuring the tiny
+          # app again and reporting it as Next.
+          app="$(find target/next-benchmark/coop-run/compiled/next-bench \
+                   -mindepth 2 -maxdepth 2 -name 'app.so' -print -quit)"
+          if [ -z "$app" ]; then
+            echo "::error::no published next-bench package to measure"
+            find target/next-benchmark/coop-run/compiled -maxdepth 3 2>&1 | head -20
+            exit 1
+          fi
+          echo "measuring Next fixture: $app"
+          COOP_BENCH_APP_LIBRARY="$PWD/$app" scripts/run-in-delegated-cgroup.sh bash -c '
+            set -euo pipefail
+            cargo test --release -p coop-daemon --test resource_benchmark \
+              measure_in_process_startup_and_rss -- --ignored --nocapture \
+              2>&1 | tee linux-next-resource-results.txt
+          '
+
       - name: Upload raw Linux evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -289,6 +342,7 @@ jobs:
           path: |
             linux-resource-results.txt
             linux-node-resource-results.txt
+            linux-next-resource-results.txt
             linux-benchmark-environment.txt
             target/dynamic-smoke/prepare.log
           if-no-files-found: warn
