@@ -235,6 +235,23 @@ jobs:
           scripts/capture-linux-benchmark-environment.sh > "$metadata"
           mv "$metadata" linux-benchmark-environment.txt
 
+      # Ordered BEFORE the loader tests on purpose: `binary_http_roundtrip`
+      # loads the published `next-bench` package, and when none exists it
+      # rebuilds via prepare-next-benchmark.sh, which needs the dependency
+      # tree. Placed after the tests instead, it fails with "the Next
+      # dependency tree is not installed" -- which is how this was found.
+      - name: Set up Node for the Next fixture build
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build and publish the Next.js fixture through Coop
+        shell: bash
+        run: |
+          set -euo pipefail
+          ( cd benchmarks/next-small && npm ci --no-audit --no-fund )
+          scripts/prepare-next-benchmark.sh
+
       - name: Loader, integrity, and lifecycle tests
         shell: bash
         run: |
@@ -302,18 +319,6 @@ jobs:
       # to run it. `prepare-next-benchmark.sh` rebuilds the production route
       # whenever the source is newer, because a committed build output silently
       # drifted from its source once already.
-      - name: Set up Node for the Next fixture build
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Build and publish the Next.js fixture through Coop
-        shell: bash
-        run: |
-          set -euo pipefail
-          ( cd benchmarks/next-small && npm ci --no-audit --no-fund )
-          scripts/prepare-next-benchmark.sh
-
       - name: Linux Next.js 1/10/100 RSS, PSS, private-dirty, and cgroup evidence
         shell: bash
         env:
