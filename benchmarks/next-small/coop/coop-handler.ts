@@ -37,10 +37,10 @@
 //
 // So accept either shape and fail loudly if neither carries a routeModule,
 // rather than dereferencing undefined and reporting something confusing.
-// Staged into node_modules by prepare-next-benchmark.sh: it is the only tree
-// Coop dereferences wholesale into the compiler snapshot, and a deployment
-// cannot declare build output as a compiler input any other way.
-import * as routeBundleNamespace from "../node_modules/.coop-next-bundle/server/app/api/benchmark/route.js";
+// Staged as ordinary deployment source by prepare-next-benchmark.sh. Outside
+// node_modules and without a leading dot, so Perry compiles it natively --
+// location is what decides AOT vs runtime-JS classification, not extension.
+import * as routeBundleNamespace from "../next-build/server/app/api/benchmark/route.js";
 
 // IMPORT ORDER IS LOAD-BEARING. The route bundle must be loaded BEFORE
 // `next/server`: loading it installs Next's require hook, and without that

@@ -108,34 +108,37 @@ cp "$source_root/coop/coop.toml" "$deployment/coop.toml"
 cp "$source_root/coop/coop-handler.ts" "$deployment/handlers/main.ts"
 cp "$source_root/app/api/benchmark/route.ts" "$deployment/app/api/benchmark/route.ts"
 ln -sfn "$source_root/node_modules" "$deployment/node_modules"
-# Stage the production build output INSIDE node_modules, which is the only
-# tree Coop dereferences wholesale into the compiler snapshot.
+# Stage the production build output as ordinary deployment source.
 #
-# This looks odd, so here is why. `copy_source_snapshot` copies the declared
-# source files and REFUSES symlinks and non-files ("compiler input is not a
-# plain file"); separately, `node_modules` is dereferenced entirely. A
-# deployment has no way to declare "this build output is also a compiler
-# input" -- `[[handlers]]`, `[[static]]`, `[[crons]]` and `[[queues]]` are the
-# whole vocabulary.
+# Location is the signal, not extension. `collect_modules.rs` compiles a
+# `.js`/`.cjs`/`.mjs` file through the native AOT pipeline exactly like a `.ts`
+# file when it is project source, and classifies it as a runtime-JS module only
+# when it sits under `node_modules`. There is no V8 fallback any more, so that
+# classification is now a refusal.
 #
-# So a `.next` symlink beside the handler never reaches the snapshot, the
-# import resolves to nothing, and Perry reports it as a missing module. That
-# cost a full CI cycle to diagnose; see PerryTS/perry#8348 for the diagnostic
-# half of it.
+# Two earlier attempts here were wrong in instructive ways:
 #
-# The bundle genuinely IS a dependency of the handler, so routing it through
-# the dependency tree is defensible rather than merely expedient -- but a
-# first-class declaration would be better, and this comment exists so the next
-# person knows which one they are looking at.
-bundle_dir="$source_root/node_modules/.coop-next-bundle"
+#   * a `.next` SYMLINK beside the handler -- `collect_source_files` skips
+#     dot-directories and rejects symlinks outright, so it never reached the
+#     compiler at all and Perry reported a missing module.
+#   * a copy into `node_modules/.coop-next-bundle/` -- that reached the
+#     compiler, but sitting under node_modules gave it the runtime-JS
+#     classification, and the leading dot excluded it from
+#     `collect_packages_in_node_modules`, so the automatic `compilePackages`
+#     `"*"` expansion (the default when no package.json pins the key) never
+#     covered it either. Both of those were self-inflicted.
+#
+# Plain directory, no dot, outside node_modules: `collect_source_files` walks
+# it, every `.js` is collected, and Perry compiles the whole bundle natively
+# with no opt-in required.
+bundle_dir="$deployment/next-build"
 rm -rf "$bundle_dir"
 mkdir -p "$bundle_dir"
 cp -R "$source_root/.next/server" "$bundle_dir/server"
 
-# Assert the bundle actually reached the staging tree. The failure this guards
-# is silent and expensive: without it the import resolves to nothing, Perry
-# reports a missing module rather than a missing FILE, and the diagnosis costs
-# a full CI cycle. Cheap check, precise failure.
+# Assert the route reached the staging tree. The failure this guards is silent
+# and costs a full CI cycle: the import resolves to nothing and Perry reports a
+# missing module rather than a missing FILE.
 staged_route="$bundle_dir/server/app/api/benchmark/route.js"
 if [[ ! -f "$staged_route" ]]; then
   fail "the production route did not reach the staged bundle: $staged_route" \
