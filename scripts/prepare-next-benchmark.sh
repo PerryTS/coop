@@ -108,9 +108,39 @@ cp "$source_root/coop/coop.toml" "$deployment/coop.toml"
 cp "$source_root/coop/coop-handler.ts" "$deployment/handlers/main.ts"
 cp "$source_root/app/api/benchmark/route.ts" "$deployment/app/api/benchmark/route.ts"
 ln -sfn "$source_root/node_modules" "$deployment/node_modules"
-# The production build output, linked like the dependency tree: it is
-# generated, not source, and the daemon dereferences it into its snapshot.
-ln -sfn "$source_root/.next" "$deployment/.next"
+# Stage the production build output INSIDE node_modules, which is the only
+# tree Coop dereferences wholesale into the compiler snapshot.
+#
+# This looks odd, so here is why. `copy_source_snapshot` copies the declared
+# source files and REFUSES symlinks and non-files ("compiler input is not a
+# plain file"); separately, `node_modules` is dereferenced entirely. A
+# deployment has no way to declare "this build output is also a compiler
+# input" -- `[[handlers]]`, `[[static]]`, `[[crons]]` and `[[queues]]` are the
+# whole vocabulary.
+#
+# So a `.next` symlink beside the handler never reaches the snapshot, the
+# import resolves to nothing, and Perry reports it as a missing module. That
+# cost a full CI cycle to diagnose; see PerryTS/perry#8348 for the diagnostic
+# half of it.
+#
+# The bundle genuinely IS a dependency of the handler, so routing it through
+# the dependency tree is defensible rather than merely expedient -- but a
+# first-class declaration would be better, and this comment exists so the next
+# person knows which one they are looking at.
+bundle_dir="$source_root/node_modules/.coop-next-bundle"
+rm -rf "$bundle_dir"
+mkdir -p "$bundle_dir"
+cp -R "$source_root/.next/server" "$bundle_dir/server"
+
+# Assert the bundle actually reached the staging tree. The failure this guards
+# is silent and expensive: without it the import resolves to nothing, Perry
+# reports a missing module rather than a missing FILE, and the diagnosis costs
+# a full CI cycle. Cheap check, precise failure.
+staged_route="$bundle_dir/server/app/api/benchmark/route.js"
+if [[ ! -f "$staged_route" ]]; then
+  fail "the production route did not reach the staged bundle: $staged_route" \
+    "check that next build produced .next/server/app/api/benchmark/route.js"
+fi
 
 # The pre-2026-08-14 hand-built fixture lived at this mutable path. Coop no
 # longer publishes there, and leaving it behind lets a stale library outlive a
