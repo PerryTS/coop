@@ -53,6 +53,63 @@ the working set under load that inverts.
   a GC-rooting signature, on artifacts predating the fix for it. Until it is
   re-measured, Coop's own hosting overhead is unquantified.
 
+
+## The Linux shared-runtime measurement
+
+The first end-to-end run of the Linux proof — providers built once, an app-only
+dylib loaded against them, under real cgroup limits — produced density and
+throughput figures for 1, 10 and 100 applications.
+
+AMD EPYC 7763, 2 vCPU, 8 GB, Ubuntu 24.04, cgroup2. Medians of 2 trials, 2000
+requests per trial.
+
+| shape | ready PSS | req/s | CPU µs/req |
+|---|---:|---:|---:|
+| coop, 1 app | 40.9 MB | 21,293 | 45 |
+| coop, 10 apps | 223.8 MB | 17,122 | 60 |
+| coop, 100 apps | 374.0 MB | 15,790 | 65 |
+| node, 1 proc × 100 logical apps *(no isolation)* | 52.0 MB | 5,519 | 195 |
+| node, 10 procs × 10 apps | 168.4 MB | 4,138 | 345 |
+| node, 100 procs × 100 apps | 1,321.2 MB | 1,341 | 630 |
+
+Against **isolated** Node at 100 applications: about **3.5× denser** and **11.8×
+the throughput**, with per-request CPU roughly **4.5× cheaper** across the range.
+
+### Why this does not contradict the 7× figure above
+
+It measures a different thing in four respects at once, and any one of them
+would be enough to break comparability:
+
+- **Workload.** A tiny handler here; a full Next.js App Route there.
+- **Platform.** Linux x86-64 here; macOS arm64 there.
+- **Hosting shape.** Coop with shared providers here; a single Perry binary
+  there.
+- **GC lowering.** The default here; `PERRY_RS4GC=0` there.
+
+So the honest reading is that Perry is cheap per request on small work and has
+not yet been measured cheaply on framework-sized work. The Next.js fixture
+exists to close exactly that gap, and until it reports, neither number
+describes "Perry versus Node".
+
+### One result worth explaining rather than rounding off
+
+Marginal cost per application is not linear. Going 1 → 10 apps costs about
+**20 MB each**; going 10 → 100 costs about **1.7 MB each**. Coop is also *worse*
+than isolated Node at 10 applications (223.8 MB against 168.4 MB) while being
+far better at 100.
+
+That shape suggests a fixed pool being amortised rather than a per-application
+cost, but it has not been investigated and should not be presented as a
+finding. It is the most interesting open question in this data.
+
+### Caveats
+
+- **2 trials**, on a 2-vCPU shared runner at load ≈ 2. Density figures are
+  robust to that; latency and CPU less so.
+- The tiny fixture shares almost everything through the providers, so its
+  marginal cost sits near the floor **by construction**. Do not read it as
+  representative of a real application.
+
 ## Density
 
 The separate density matrix — the actual premise — is more favourable and also

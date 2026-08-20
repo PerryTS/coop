@@ -53,8 +53,12 @@ code is authoritative and this page is not.
 
 ## Not yet
 
-- **Performance parity with Node** on per-request CPU. Currently around 7× worse
-  on like-for-like work; see [Benchmarks](benchmarks.md).
+- **A settled answer on per-request CPU.** The two measurements that exist point
+  in opposite directions because they measure different things, and neither is
+  the headline: roughly **7× worse** than Node hosting a full Next.js App Route
+  as a single macOS binary, and roughly **4.5× better** than Node on a tiny
+  handler under Coop on Linux. Both are real; neither generalises. See
+  [Benchmarks](benchmarks.md) before quoting either.
 - **Multi-tenant isolation for untrusted code.** The architecture is designed
   toward it, but the current threat model assumes you own the code you deploy.
   See the isolation section of [Architecture](architecture.md).
