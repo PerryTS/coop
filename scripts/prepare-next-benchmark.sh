@@ -177,6 +177,18 @@ listen_http = "$2"
 [execution]
 mode = "in_process"
 provider_verification = "$provider_verification"
+# The default 300 s is sized for ordinary application code. This fixture
+# compiles Next's whole production server surface natively -- the App Route
+# runtime alone is ~15-21 MB of IR across 400-535 functions, which Perry drops
+# to -Os because LLVM's -O1+ pipeline will not survive functions that wide
+# (#4880). Measured at roughly 8 minutes on a quiet M1; a 2-vCPU CI runner is
+# slower still.
+#
+# It got slower for a good reason: disabling server chunk splitting made
+# route.js self-contained, so there is simply more to compile. The earlier
+# 77-second compile was the split build, which then failed at runtime because
+# the chunks were loaded by a computed require.
+compile_timeout_seconds = 1800
 
 [paths]
 deployments_dir = "$fixture_root/deployments"
