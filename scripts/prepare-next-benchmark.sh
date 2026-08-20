@@ -208,7 +208,19 @@ trap cleanup EXIT INT TERM
 # an earlier run once satisfied a naive file check with a package the daemon
 # had just refused.
 loaded() {
-  grep -F 'application library preloaded on dedicated Perry thread' "$log_file" \
+  # Two load paths, two log lines. A dedicated worker logs "preloaded on
+  # dedicated Perry thread"; an in-daemon load (isolation resolving to
+  # "trusted", which is what this fixture gets) logs "preloading application
+  # library in daemon". Waiting only for the first meant a perfectly good
+  # build sat until the one-shot daemon exited, and the script then reported
+  # "Coop exited before publishing" for a fixture it had already published --
+  # the log said `compilation succeeded and immutable package was published`
+  # three lines above the error.
+  #
+  # Matching either keeps this honest about what it is waiting for: the app
+  # being loaded, not the particular thread it landed on. The published-package
+  # check below is what actually validates the result.
+  grep -E 'application library preloaded on dedicated Perry thread|preloading application library in daemon' "$log_file" \
     | grep -Fq 'next-bench'
 }
 
