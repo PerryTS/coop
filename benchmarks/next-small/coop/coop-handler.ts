@@ -49,11 +49,23 @@ import * as routeBundleNamespace from "../next-build/server/app/api/benchmark/ro
 // available". Verified by reordering these two lines and watching it break.
 import { NextRequest } from "next/server";
 
-const routeBundle: Record<string, unknown> =
-  (routeBundleNamespace as Record<string, unknown>).routeModule !== undefined
-    ? (routeBundleNamespace as Record<string, unknown>)
-    : (((routeBundleNamespace as Record<string, unknown>).default ??
-        {}) as Record<string, unknown>);
+// Resolved with plain statements rather than a nested ternary plus `??`.
+// Measured shape under Perry for a webpack CommonJS bundle:
+//   ns keys            : default, module.exports
+//   ns.routeModule     : undefined
+//   ns.default         : object  <- the real exports live here
+//   default.routeModule: object, and .handle IS a function
+// The interop shape differs by toolchain, so try the namespace first and fall
+// back to `default`, and keep the expression simple enough to be obviously
+// correct at a glance.
+const routeNamespace = routeBundleNamespace as unknown as Record<string, unknown>;
+let routeBundle: Record<string, unknown> = routeNamespace;
+if (routeNamespace.routeModule === undefined) {
+  const fallback = routeNamespace.default;
+  if (fallback !== undefined && fallback !== null) {
+    routeBundle = fallback as Record<string, unknown>;
+  }
+}
 
 const routeModule = routeBundle.routeModule as
   | { handle: (request: object, context: unknown) => Promise<Response> }

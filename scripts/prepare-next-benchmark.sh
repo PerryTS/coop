@@ -71,8 +71,14 @@ fi
 route_build="$source_root/.next/server/app/api/benchmark/route.js"
 if [[ ! -f "$route_build" || "$source_root/app/api/benchmark/route.ts" -nt "$route_build" ]]; then
   echo "building the production Next App Route (source is newer than the build)" >&2
-  ( cd "$source_root" && npx --no-install next build >/dev/null ) || \
-    fail "next build failed in $source_root" "(cd $source_root && npx next build)"
+  # --webpack is not optional. Next 16 defaults to turbopack, whose runtime
+  # loads chunks with `require(path.resolve(RUNTIME_ROOT, chunkPath))` -- a
+  # computed require an ahead-of-time compiler cannot resolve, so the chunk
+  # never enters the binary and the route dies on first dispatch. The
+  # fixture's own package.json script has always said `next build --webpack`;
+  # invoking `next build` directly silently changed the bundler.
+  ( cd "$source_root" && npx --no-install next build --webpack >/dev/null ) || \
+    fail "next build failed in $source_root" "(cd $source_root && npm run build)"
 fi
 if [[ ! -f "$route_build" ]]; then
   fail "next build produced no $route_build" \
