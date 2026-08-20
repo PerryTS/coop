@@ -338,6 +338,23 @@ jobs:
             find target/next-benchmark/coop-run/compiled -maxdepth 3 2>&1 | head -20
             exit 1
           fi
+          # The density harness COPIES the app image once per deployment
+          # (resource_benchmark.rs: `std::fs::copy(source_app, &app)`), so 100
+          # apps means 100 physical copies. The tiny fixture is trivial; this
+          # one carries Next's whole compiled server surface, so check the
+          # arithmetic BEFORE spending 20 minutes discovering it as ENOSPC --
+          # which surfaces as unrelated-looking failures rather than "disk
+          # full" (see the phantom codegen bug in PerryTS/perry#8228).
+          app_mib=$(( $(stat -c %s "$app") / 1048576 ))
+          free_mib=$(df -m --output=avail . | tail -1 | tr -d ' ')
+          need_mib=$(( app_mib * 111 ))   # 1 + 10 + 100 copies
+          echo "app image: ${app_mib} MiB; 111 copies need ~${need_mib} MiB; free ${free_mib} MiB"
+          if [ "$need_mib" -gt "$free_mib" ]; then
+            echo "::error::Not enough disk to replicate the Next fixture 100x:"
+            echo "::error::  need ~${need_mib} MiB, have ${free_mib} MiB free."
+            echo "::error::Reduce COOP_BENCH_APP_COUNTS or free space on the runner."
+            exit 1
+          fi
           echo "measuring Next fixture: $app"
           COOP_BENCH_APP_LIBRARY="$PWD/$app" scripts/run-in-delegated-cgroup.sh bash -c '
             set -euo pipefail
