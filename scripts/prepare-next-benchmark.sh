@@ -189,6 +189,13 @@ provider_verification = "$provider_verification"
 # 77-second compile was the split build, which then failed at runtime because
 # the chunks were loaded by a computed require.
 compile_timeout_seconds = 1800
+# Peak compile RSS scales with concurrent LLVM units, and this fixture's units
+# are enormous (15-21 MB of IR each). At the default 2 module jobs x 2 unit
+# workers the compile peaked at 4.2 GB and tripped the 4 GB cap. The workflow
+# pins concurrency to 2 total units; this leaves headroom above that without
+# approaching the runner's 7.75 GB, where the kernel OOM killer would replace
+# a clean refusal with a mysterious death.
+compile_max_rss_mb = 6144
 
 [paths]
 deployments_dir = "$fixture_root/deployments"

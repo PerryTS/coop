@@ -247,9 +247,18 @@ jobs:
 
       - name: Build and publish the Next.js fixture through Coop
         shell: bash
+        env:
+          # Peak compile RSS scales with CONCURRENT LLVM units, and this
+          # fixture's units are 15-21 MB of IR apiece. The default on this
+          # runner is 2 module jobs x 2 unit workers -- four at once, which
+          # peaked at 4.2 GB and tripped the daemon's cap. The runner has 2
+          # vCPUs, so that concurrency was buying nothing anyway.
+          PERRY_MODULE_JOBS: "2"
+          PERRY_CODEGEN_UNIT_JOBS: "1"
         run: |
           set -euo pipefail
           ( cd benchmarks/next-small && npm ci --no-audit --no-fund )
+          free -m | sed "s/^/  mem: /" || true
           scripts/prepare-next-benchmark.sh
 
       - name: Loader, integrity, and lifecycle tests
