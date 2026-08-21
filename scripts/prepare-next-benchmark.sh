@@ -15,6 +15,12 @@ source_root="${COOP_NEXT_SOURCE_DIR:-$repo_root/benchmarks/next-small}"
 perry="${COOP_BENCH_PERRY:-$repo_root/.perry-main/target/perry-dev/perry}"
 provider_verification="${COOP_BENCH_PROVIDER_VERIFICATION:-full_hash}"
 timeout_seconds="${COOP_NEXT_PREPARE_TIMEOUT:-1200}"
+# Compile peak for this fixture is well above 6 GB and has never been measured
+# to completion under a cap -- every run so far died AT the limit, so each
+# reported figure was the cap and not the peak. Raise this on a host with real
+# memory; the default is a floor that keeps a constrained runner from swapping
+# itself to death, not a statement about what the compile needs.
+max_rss_mb="${COOP_NEXT_MAX_RSS_MB:-6144}"
 
 case "$(uname -s)" in
   Darwin) extension="dylib" ;;
@@ -195,7 +201,7 @@ compile_timeout_seconds = 1800
 # pins concurrency to 2 total units; this leaves headroom above that without
 # approaching the runner's 7.75 GB, where the kernel OOM killer would replace
 # a clean refusal with a mysterious death.
-compile_max_rss_mb = 6144
+compile_max_rss_mb = $max_rss_mb
 
 [paths]
 deployments_dir = "$fixture_root/deployments"
