@@ -15,6 +15,13 @@ use std::time::Instant;
 pub(crate) type JsGcInit = unsafe extern "C" fn();
 pub(crate) type JsPromiseState = unsafe extern "C" fn(*mut u8) -> i32;
 pub(crate) type JsPromiseValue = unsafe extern "C" fn(*mut u8) -> f64;
+/// Perry's FFI root scope. A host that holds a JS value across anything that
+/// can run JS must root it: an evacuating minor MOVES the object, and a cached
+/// raw address becomes a stale from-space pointer.
+pub(crate) type JsFfiRootScopeEnter = unsafe extern "C" fn() -> usize;
+pub(crate) type JsFfiRootScopeExit = unsafe extern "C" fn(usize);
+pub(crate) type JsFfiRootPushNanbox = unsafe extern "C" fn(u64) -> usize;
+pub(crate) type JsFfiRootGetNanbox = unsafe extern "C" fn(usize) -> u64;
 pub(crate) type PerryPoll = unsafe extern "C" fn() -> i32;
 pub(crate) type JsWaitForEvent = unsafe extern "C" fn();
 pub(crate) type JsValueIsPromise = unsafe extern "C" fn(f64) -> i32;
@@ -37,6 +44,10 @@ pub(crate) struct RuntimeApi {
     pub js_promise_state: JsPromiseState,
     pub js_promise_value: JsPromiseValue,
     pub js_promise_reason: JsPromiseValue,
+    pub js_ffi_root_scope_enter: JsFfiRootScopeEnter,
+    pub js_ffi_root_scope_exit: JsFfiRootScopeExit,
+    pub js_ffi_root_push_nanbox: JsFfiRootPushNanbox,
+    pub js_ffi_root_get_nanbox: JsFfiRootGetNanbox,
     pub perry_poll: PerryPoll,
     pub js_wait_for_event: JsWaitForEvent,
     pub js_value_is_promise: JsValueIsPromise,
@@ -181,6 +192,10 @@ pub fn initialize_runtime_libraries_with_verification(
                 js_promise_state: load_symbol(runtime_handle, "js_promise_state")?,
                 js_promise_value: load_symbol(runtime_handle, "js_promise_value")?,
                 js_promise_reason: load_symbol(runtime_handle, "js_promise_reason")?,
+                js_ffi_root_scope_enter: load_symbol(runtime_handle, "js_ffi_root_scope_enter")?,
+                js_ffi_root_scope_exit: load_symbol(runtime_handle, "js_ffi_root_scope_exit")?,
+                js_ffi_root_push_nanbox: load_symbol(runtime_handle, "js_ffi_root_push_nanbox")?,
+                js_ffi_root_get_nanbox: load_symbol(runtime_handle, "js_ffi_root_get_nanbox")?,
                 perry_poll: load_symbol(runtime_handle, "perry_poll")?,
                 js_wait_for_event: load_symbol(runtime_handle, "js_wait_for_event")?,
                 js_value_is_promise: load_symbol(runtime_handle, "js_value_is_promise")?,
