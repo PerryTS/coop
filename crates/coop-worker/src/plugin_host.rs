@@ -346,8 +346,23 @@ impl LoadedPlugin {
                     // the error message; if it's not a string, we just
                     // include the raw bits.
                     let reason = unsafe { (api.js_promise_reason)(promise_ptr) };
-                    let reason_str = read_perry_string(reason)
-                        .unwrap_or_else(|| format!("0x{:016x}", reason.to_bits()));
+                    // Never render an empty reason. `handler promise rejected: `
+                    // with nothing after it is what an operator actually sees,
+                    // and it names neither the failure nor where to look. An
+                    // Error object reads back as a zero-length string here, so
+                    // "" and "not a string" must stay distinguishable, and the
+                    // raw bits are always worth keeping for a bug report.
+                    let reason_str = match read_perry_string(reason) {
+                        Some(text) if !text.is_empty() => text,
+                        Some(_) => format!(
+                            "<empty string> (raw 0x{:016x})",
+                            reason.to_bits()
+                        ),
+                        None => format!(
+                            "<non-string rejection value> (raw 0x{:016x})",
+                            reason.to_bits()
+                        ),
+                    };
                     return Err(anyhow!("handler promise rejected: {}", reason_str));
                 }
                 _ => {
