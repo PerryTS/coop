@@ -346,8 +346,31 @@ impl LoadedPlugin {
                     // the error message; if it's not a string, we just
                     // include the raw bits.
                     let reason = unsafe { (api.js_promise_reason)(promise_ptr) };
-                    let reason_str = read_perry_string(reason)
-                        .unwrap_or_else(|| format!("0x{:016x}", reason.to_bits()));
+                    // Never render an empty reason. `handler promise rejected: `
+                    // with nothing after it is what an operator actually sees,
+                    // and it names neither the failure nor where to look. An
+                    // Error object reads back as a zero-length string here, so
+                    // "" and "not a string" must stay distinguishable, and the
+                    // raw bits are always worth keeping for a bug report.
+                    let bits = reason.to_bits();
+                    let reason_str = match read_perry_string(reason) {
+                        Some(text) if !text.is_empty() => text,
+                        Some(_) => format!("<empty string> (raw 0x{bits:016x})"),
+                        None => {
+                            // Not a string: ask Perry to stringify it, so an
+                            // `Error` object reports as "Error: <message>"
+                            // instead of an opaque tag. This is what turned an
+                            // unattributable 500 into
+                            // "TypeError: value is not a function".
+                            let header = unsafe { (api.js_jsvalue_to_string)(reason) };
+                            read_string_header(header as *const StringHeader).unwrap_or_else(|| {
+                                format!(
+                                    "<non-string rejection value, tag 0x{:04x}> (raw 0x{bits:016x})",
+                                    bits >> 48
+                                )
+                            })
+                        }
+                    };
                     return Err(anyhow!("handler promise rejected: {}", reason_str));
                 }
                 _ => {
@@ -633,10 +656,41 @@ fn make_perry_buffer(bytes: &[u8]) -> Result<f64> {
     Ok(value)
 }
 
+/// NaN-box tags for the two string representations. See Perry's
+/// `crates/perry-runtime/src/value/nanbox.rs`.
+const STRING_TAG: u64 = 0x7fff;
+const SHORT_STRING_TAG: u64 = 0x7ff9;
+
+/// Materialize a `StringHeader` the runtime handed us. Split out so the
+/// rejection path can reuse it for `js_jsvalue_to_string`'s result.
+fn read_string_header(header_ptr: *const StringHeader) -> Option<String> {
+    if header_ptr.is_null() {
+        return None;
+    }
+    unsafe {
+        let len = (*header_ptr).byte_len as usize;
+        let data = (header_ptr as *const u8).add(std::mem::size_of::<StringHeader>());
+        let slice = std::slice::from_raw_parts(data, len);
+        Some(String::from_utf8_lossy(slice).into_owned())
+    }
+}
+
 fn read_perry_string(value: f64) -> Option<String> {
+    // Check the tag OURSELVES first. `js_get_string_pointer_unified` does NOT
+    // return 0 for every non-string: it deliberately returns the payload for a
+    // POINTER_TAG (0x7ffd) value too, "used for cross-module returns"
+    // (nanbox.rs). Handing it an object therefore yields a non-null pointer
+    // that is NOT a StringHeader, and reading through it is a wild read — it
+    // produced a bogus one-character reason ("\t") for a rejected handler
+    // promise carrying an Error object.
+    let tag = value.to_bits() >> 48;
+    if tag != STRING_TAG && tag != SHORT_STRING_TAG {
+        return None;
+    }
+
     // js_get_string_pointer_unified handles both heap-allocated strings
     // (STRING_TAG) and inline SSO strings (SHORT_STRING_TAG) by
-    // materializing the latter to the heap. Returns 0 if not a string.
+    // materializing the latter to the heap.
     let header_ptr =
         unsafe { (crate::runtime_libraries::runtime_api().js_get_string_pointer_unified)(value) }
             as *const StringHeader;

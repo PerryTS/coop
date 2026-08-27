@@ -15,6 +15,9 @@ use std::time::Instant;
 pub(crate) type JsGcInit = unsafe extern "C" fn();
 pub(crate) type JsPromiseState = unsafe extern "C" fn(*mut u8) -> i32;
 pub(crate) type JsPromiseValue = unsafe extern "C" fn(*mut u8) -> f64;
+/// `js_jsvalue_to_string(value) -> *mut StringHeader`: stringify ANY JS value,
+/// so a non-string rejection (an `Error` object) can still be reported.
+pub(crate) type JsValueToString = unsafe extern "C" fn(f64) -> *const u8;
 pub(crate) type PerryPoll = unsafe extern "C" fn() -> i32;
 pub(crate) type JsWaitForEvent = unsafe extern "C" fn();
 pub(crate) type JsValueIsPromise = unsafe extern "C" fn(f64) -> i32;
@@ -37,6 +40,7 @@ pub(crate) struct RuntimeApi {
     pub js_promise_state: JsPromiseState,
     pub js_promise_value: JsPromiseValue,
     pub js_promise_reason: JsPromiseValue,
+    pub js_jsvalue_to_string: JsValueToString,
     pub perry_poll: PerryPoll,
     pub js_wait_for_event: JsWaitForEvent,
     pub js_value_is_promise: JsValueIsPromise,
@@ -181,6 +185,7 @@ pub fn initialize_runtime_libraries_with_verification(
                 js_promise_state: load_symbol(runtime_handle, "js_promise_state")?,
                 js_promise_value: load_symbol(runtime_handle, "js_promise_value")?,
                 js_promise_reason: load_symbol(runtime_handle, "js_promise_reason")?,
+                js_jsvalue_to_string: load_symbol(runtime_handle, "js_jsvalue_to_string")?,
                 perry_poll: load_symbol(runtime_handle, "perry_poll")?,
                 js_wait_for_event: load_symbol(runtime_handle, "js_wait_for_event")?,
                 js_value_is_promise: load_symbol(runtime_handle, "js_value_is_promise")?,
