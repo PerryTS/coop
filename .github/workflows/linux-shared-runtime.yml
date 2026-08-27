@@ -84,6 +84,24 @@ jobs:
           git -C .perry-main checkout --detach FETCH_HEAD
           test "$(git -C .perry-main rev-parse HEAD)" = "$commit"
 
+      # `rustup toolchain install` with no argument reads `rust-toolchain.toml`.
+      # This job builds perry-runtime itself (through the providers and through
+      # coop-daemon/coop-worker), so it fails outright on a channel other than
+      # the one Perry pins -- assert the two files agree before spending an hour.
+      - name: Install the pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          ours="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+          theirs="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' .perry-main/rust-toolchain.toml)"
+          test -n "$ours" && test -n "$theirs"
+          if [ "$ours" != "$theirs" ]; then
+            echo "::error::rust-toolchain.toml pins $ours but Perry at perry-main.lock pins $theirs"
+            exit 1
+          fi
+          rustup toolchain install --profile minimal
+          rustup show active-toolchain
+
       - name: Build separate providers and server
         shell: bash
         run: |

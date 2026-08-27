@@ -6,8 +6,11 @@
   `perry-main.lock` at the repository root — the `commit` field, not the version
   string. Perry's version does not change on every commit, so it cannot tell you
   whether your checkout matches.
-- Rust stable, and the toolchain Perry itself requires (LLVM 22 for its
-  in-process backend).
+- The Rust toolchain named in `rust-toolchain.toml` at the repository root.
+  It is a dated nightly, not stable: `perry-runtime` uses nightly-only float
+  intrinsics, and because `.perry-main` is excluded from this workspace Perry's
+  own toolchain file does not apply to builds run from here. rustup installs it
+  on first use. Also LLVM 22, for Perry's in-process backend.
 - Node, for the developer tooling and test fixtures.
 
 ## 1. Build the shared providers

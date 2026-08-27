@@ -42,8 +42,10 @@ Two things worth knowing before you invest time:
 
 ## Quick start
 
-Requirements: a Perry checkout (pinned by `perry-main.lock`), Rust stable, and
-Node for the developer tooling.
+Requirements: a Perry checkout (pinned by `perry-main.lock`), the Rust nightly
+named in `rust-toolchain.toml` (rustup picks it up automatically; it matches
+Perry's own pin, and the two are bumped together), and Node for the developer
+tooling.
 
 ```bash
 # 1. Build the shared runtime + stdlib provider libraries once
