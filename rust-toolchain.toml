@@ -1,0 +1,12 @@
+# Coop builds Perry's crates (perry-runtime, perry-stdlib, perry-ffi) as path
+# dependencies out of `.perry-main`, and `.perry-main` is excluded from this
+# workspace — so Perry's own `rust-toolchain.toml` never applies to a cargo
+# invocation made from this directory. `perry-runtime` uses the
+# `float_algebraic` methods, which are nightly-only: on stable every build of
+# coop-daemon or coop-worker fails with E0658 as of Perry 0.5.1519 (perry#8550).
+#
+# Keep this channel identical to `.perry-main/rust-toolchain.toml` at the commit
+# `perry-main.lock` names, and bump the two together.
+[toolchain]
+channel = "nightly-2026-08-20"
+components = ["rustfmt", "clippy"]

@@ -42,10 +42,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
+      # No toolchain name here on purpose: `rustup toolchain install` with no
+      # argument reads `rust-toolchain.toml`, so the channel this job builds
+      # with is the one the file pins -- the same one `perry-runtime` needs.
+      - name: Install the pinned Rust toolchain
         run: |
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy
-          rustup default stable
+          rustup toolchain install --profile minimal
+          rustup show active-toolchain
 
       # Cargo resolves the WHOLE workspace before building any member, so
       # `perry-stdlib-shared`'s path dependency on `perry-ffi` must exist even
@@ -66,6 +69,22 @@ jobs:
           git -C .perry-main fetch --depth 1 origin "$commit"
           git -C .perry-main checkout --detach FETCH_HEAD
           test "$(git -C .perry-main rev-parse HEAD)" = "$commit"
+
+      # `.perry-main` is excluded from the workspace, so Perry's own
+      # `rust-toolchain.toml` never governs a cargo run made from this
+      # directory; ours has to name the same channel. Fail the bump that
+      # forgets one of the two rather than the first nightly-only build.
+      - name: Assert the toolchain pin matches Perry's
+        shell: bash
+        run: |
+          set -euo pipefail
+          ours="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+          theirs="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' .perry-main/rust-toolchain.toml)"
+          test -n "$ours" && test -n "$theirs"
+          if [ "$ours" != "$theirs" ]; then
+            echo "::error::rust-toolchain.toml pins $ours but Perry at perry-main.lock pins $theirs"
+            exit 1
+          fi
 
       - uses: Swatinem/rust-cache@v2
         with:

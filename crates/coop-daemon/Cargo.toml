@@ -59,7 +59,7 @@ metrics-exporter-prometheus = "0.16"
 
 # SQLite for schema provisioning + migration runner.
 # Match perry-stdlib's version to avoid libsqlite3-sys "links" conflict.
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
 
 # Chrono for timestamps in admin UI
 chrono = { version = "0.4", features = ["serde"] }

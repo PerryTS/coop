@@ -66,9 +66,13 @@ more than a dozen commits including significant runtime changes. Pin and compare
 
 After bumping the pin:
 
-1. Rebuild the providers (`build-perry-libraries.sh`).
-2. Recompile every deployment — the identity guard will reject stale images.
-3. Confirm the provider `sha256` changed and the manifest's `perry_commit`
+1. Compare `.perry-main/rust-toolchain.toml` with the `rust-toolchain.toml` at
+   this repository's root and copy the channel across if it moved. Perry's file
+   does not govern builds run from here (`.perry-main` is excluded from the
+   workspace), and both CI workflows fail early when the two disagree.
+2. Rebuild the providers (`build-perry-libraries.sh`).
+3. Recompile every deployment — the identity guard will reject stale images.
+4. Confirm the provider `sha256` changed and the manifest's `perry_commit`
    matches the new pin.
 
 A fixture or benchmark artifact built by hand will go stale on every bump and
