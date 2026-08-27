@@ -9,11 +9,11 @@ use coop_host_abi::AppLibraryManifest;
 use futures::{stream, StreamExt};
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader};
-use std::sync::{Arc, Mutex};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const PACKAGE_DIGEST_V2_DOMAIN: &[u8] = b"coop-application-package-v2\0";
@@ -720,7 +720,10 @@ async fn warm_every_app(port: u16, app_count: usize) {
         assert!(
             String::from_utf8_lossy(body.as_ref()).contains(&expected),
             "warm response for {name} did not contain {expected:?}: {}",
-            String::from_utf8_lossy(body.as_ref()).chars().take(200).collect::<String>()
+            String::from_utf8_lossy(body.as_ref())
+                .chars()
+                .take(200)
+                .collect::<String>()
         );
     }
 }
