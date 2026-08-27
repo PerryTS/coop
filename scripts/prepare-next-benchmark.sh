@@ -14,12 +14,14 @@ fixture_root="${COOP_NEXT_FIXTURE_DIR:-$repo_root/target/next-benchmark/coop-run
 source_root="${COOP_NEXT_SOURCE_DIR:-$repo_root/benchmarks/next-small}"
 perry="${COOP_BENCH_PERRY:-$repo_root/.perry-main/target/perry-dev/perry}"
 provider_verification="${COOP_BENCH_PROVIDER_VERIFICATION:-full_hash}"
-# Must exceed the compile_timeout_seconds this script writes into the
-# daemon's runtime config below (1800), or the script kills a compile the
-# daemon was still entitled to finish. It did: the self-contained webpack
-# route takes ~8 minutes on a quiet M1 and well over 20 on a loaded one, and a
-# 1200 s outer limit reported "Timed out" with the daemon mid-compile.
-timeout_seconds="${COOP_NEXT_PREPARE_TIMEOUT:-2700}"
+# The daemon's compile wall-time budget. 1800 s fits the ~8-minute quiet-M1
+# compile with margin; on a host busy with other Perry builds (load average
+# 56 while this was written) the same compile exceeded it. Override per run
+# rather than editing the generated config.
+compile_timeout_seconds="${COOP_NEXT_COMPILE_TIMEOUT:-1800}"
+# Outer limit derives from the inner one so the script can never kill a
+# compile the daemon was still entitled to finish.
+timeout_seconds="${COOP_NEXT_PREPARE_TIMEOUT:-$(( compile_timeout_seconds + 900 ))}"
 # Compile peak for this fixture is well above 6 GB and has never been measured
 # to completion under a cap -- every run so far died AT the limit, so each
 # reported figure was the cap and not the peak. Raise this on a host with real
@@ -233,7 +235,7 @@ provider_verification = "$provider_verification"
 # route.js self-contained, so there is simply more to compile. The earlier
 # 77-second compile was the split build, which then failed at runtime because
 # the chunks were loaded by a computed require.
-compile_timeout_seconds = 1800
+compile_timeout_seconds = $compile_timeout_seconds
 # Peak compile RSS scales with concurrent LLVM units, and this fixture's units
 # are enormous (15-21 MB of IR each). At the default 2 module jobs x 2 unit
 # workers the compile peaked at 4.2 GB and tripped the 4 GB cap. The workflow
