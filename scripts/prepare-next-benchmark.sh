@@ -14,7 +14,14 @@ fixture_root="${COOP_NEXT_FIXTURE_DIR:-$repo_root/target/next-benchmark/coop-run
 source_root="${COOP_NEXT_SOURCE_DIR:-$repo_root/benchmarks/next-small}"
 perry="${COOP_BENCH_PERRY:-$repo_root/.perry-main/target/perry-dev/perry}"
 provider_verification="${COOP_BENCH_PROVIDER_VERIFICATION:-full_hash}"
-timeout_seconds="${COOP_NEXT_PREPARE_TIMEOUT:-1200}"
+# The daemon's compile wall-time budget. 1800 s fits the ~8-minute quiet-M1
+# compile with margin; on a host busy with other Perry builds (load average
+# 56 while this was written) the same compile exceeded it. Override per run
+# rather than editing the generated config.
+compile_timeout_seconds="${COOP_NEXT_COMPILE_TIMEOUT:-1800}"
+# Outer limit derives from the inner one so the script can never kill a
+# compile the daemon was still entitled to finish.
+timeout_seconds="${COOP_NEXT_PREPARE_TIMEOUT:-$(( compile_timeout_seconds + 900 ))}"
 # Compile peak for this fixture is well above 6 GB and has never been measured
 # to completion under a cap -- every run so far died AT the limit, so each
 # reported figure was the cap and not the peak. Raise this on a host with real
@@ -75,8 +82,36 @@ fi
 # been measured against different code than the Node standalone build compiles
 # from the same source, which is not a comparison at all.
 route_build="$source_root/.next/server/app/api/benchmark/route.js"
-if [[ ! -f "$route_build" || "$source_root/app/api/benchmark/route.ts" -nt "$route_build" ]]; then
-  echo "building the production Next App Route (source is newer than the build)" >&2
+# Freshness is decided by EVERYTHING that shapes the output, not the route
+# source alone. The bundler switch to --webpack changed next.config.ts and
+# package.json and left route.ts untouched, so a .next/ built by turbopack
+# five days earlier passed a route.ts-only check as current and the daemon
+# died at preload on `Failed to load chunk server/chunks/[externals]__...`.
+# A build by the wrong bundler is stale whatever its mtime says.
+turbopack_marker="$source_root/.next/server/chunks/[turbopack]_runtime.js"
+needs_build=0
+if [[ ! -f "$route_build" ]]; then
+  needs_build=1
+elif [[ -f "$turbopack_marker" ]]; then
+  echo "the existing .next/ was produced by turbopack; rebuilding with webpack" >&2
+  needs_build=1
+else
+  for input in \
+    "$source_root/app/api/benchmark/route.ts" \
+    "$source_root/app/layout.tsx" \
+    "$source_root/next.config.ts" \
+    "$source_root/package.json" \
+    "$source_root/package-lock.json"; do
+    if [[ "$input" -nt "$route_build" ]]; then
+      echo "$(basename "$input") is newer than the build" >&2
+      needs_build=1
+      break
+    fi
+  done
+fi
+if [[ "$needs_build" == 1 ]]; then
+  echo "building the production Next App Route" >&2
+  rm -rf "$source_root/.next"
   # --webpack is not optional. Next 16 defaults to turbopack, whose runtime
   # loads chunks with `require(path.resolve(RUNTIME_ROOT, chunkPath))` -- a
   # computed require an ahead-of-time compiler cannot resolve, so the chunk
@@ -89,6 +124,12 @@ fi
 if [[ ! -f "$route_build" ]]; then
   fail "next build produced no $route_build" \
     "check the Next version and app/api/benchmark/route.ts"
+fi
+# Assert the bundler, not just the file: a turbopack build has the same
+# route.js path and fails only at preload, one full compile later.
+if [[ -f "$turbopack_marker" ]]; then
+  fail "next build emitted a turbopack runtime; the route loads chunks with a computed require Perry cannot resolve" \
+    "(cd $source_root && npx --no-install next build --webpack) and check next.config.ts"
 fi
 for required in \
   "$source_root/coop/coop.toml" \
@@ -194,7 +235,7 @@ provider_verification = "$provider_verification"
 # route.js self-contained, so there is simply more to compile. The earlier
 # 77-second compile was the split build, which then failed at runtime because
 # the chunks were loaded by a computed require.
-compile_timeout_seconds = 1800
+compile_timeout_seconds = $compile_timeout_seconds
 # Peak compile RSS scales with concurrent LLVM units, and this fixture's units
 # are enormous (15-21 MB of IR each). At the default 2 module jobs x 2 unit
 # workers the compile peaked at 4.2 GB and tripped the 4 GB cap. The workflow
