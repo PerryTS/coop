@@ -316,8 +316,9 @@ impl LoadedPlugin {
     /// wake primitive until I/O or the next timer is ready. There is no fixed
     /// polling quantum on the request path.
     fn await_promise(&mut self, promise_value: f64) -> Result<f64> {
-        // Extract the raw Promise pointer from the NaN-boxed value.
-        let promise_ptr = {
+        // Validate the shape up front; the pointer itself is re-derived from
+        // the root on every loop turn (see below).
+        {
             let bits = promise_value.to_bits();
             if (bits & !POINTER_MASK) != POINTER_TAG {
                 return Err(anyhow!(
@@ -325,15 +326,40 @@ impl LoadedPlugin {
                     bits
                 ));
             }
-            (bits & POINTER_MASK) as usize as *mut u8
-        };
+        }
 
         let api = crate::runtime_libraries::runtime_api();
+
+        // ROOT the Promise for the whole await. `perry_poll` runs JS, which
+        // reaches GC safepoints, and an evacuating minor MOVES the Promise --
+        // after which the cached pointer is a stale from-space address and
+        // `js_promise_state` reads recycled memory.
+        //
+        // PERRY_GC_PROTECT_FROMSPACE faults precisely here:
+        //
+        //   [gc-fromspace-protect] FAULT: signal 10
+        //   This address is RETIRED FROM-SPACE. The evacuating minor moved or
+        //   freed the object here and the holder kept the pre-collection address.
+        //   last-known object: obj_type=5 size=72        (5 = GC_TYPE_PROMISE)
+        //
+        // Re-deriving the pointer from `promise_value` each turn would NOT
+        // help: the NaN-box holds the same pre-collection address. Only a root
+        // the collector rewrites is stable, so re-read the slot every turn.
+        let root_base = unsafe { (api.js_ffi_root_scope_enter)() };
+        let root_slot = unsafe { (api.js_ffi_root_push_nanbox)(promise_value.to_bits()) };
+        let _root_scope = FfiRootScope { base: root_base };
+
         let start = Instant::now();
         loop {
             unsafe {
                 let _ = (api.perry_poll)();
             }
+
+            // Re-read through the root: the collector rewrote it if it moved.
+            let promise_ptr = {
+                let bits = unsafe { (api.js_ffi_root_get_nanbox)(root_slot) };
+                (bits & POINTER_MASK) as usize as *mut u8
+            };
 
             let state = unsafe { (api.js_promise_state)(promise_ptr) };
             match state {
@@ -654,6 +680,18 @@ fn make_perry_buffer(bytes: &[u8]) -> Result<f64> {
         unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), data, bytes.len()) };
     }
     Ok(value)
+}
+
+/// Pops Perry's FFI root scope on every exit path, including the `?` and
+/// timeout returns out of the await loop.
+struct FfiRootScope {
+    base: usize,
+}
+
+impl Drop for FfiRootScope {
+    fn drop(&mut self) {
+        unsafe { (crate::runtime_libraries::runtime_api().js_ffi_root_scope_exit)(self.base) };
+    }
 }
 
 /// NaN-box tags for the two string representations. See Perry's
