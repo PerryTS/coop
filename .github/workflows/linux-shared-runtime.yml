@@ -5,6 +5,14 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      next_fixture:
+        description: >-
+          Build, verify and measure the Next.js fixture. OFF by default: the
+          compile peaks above 8.3 GB RSS and a GitHub-hosted runner has 7.75 GB,
+          so it cannot complete here. Enable only on a host with more memory.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -235,6 +243,34 @@ jobs:
           scripts/capture-linux-benchmark-environment.sh > "$metadata"
           mv "$metadata" linux-benchmark-environment.txt
 
+      # Ordered BEFORE the loader tests on purpose: `binary_http_roundtrip`
+      # loads the published `next-bench` package, and when none exists it
+      # rebuilds via prepare-next-benchmark.sh, which needs the dependency
+      # tree. Placed after the tests instead, it fails with "the Next
+      # dependency tree is not installed" -- which is how this was found.
+      - name: Set up Node for the Next fixture build
+        if: inputs.next_fixture
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build and publish the Next.js fixture through Coop
+        if: inputs.next_fixture
+        shell: bash
+        env:
+          # Peak compile RSS scales with CONCURRENT LLVM units, and this
+          # fixture's units are 15-21 MB of IR apiece. The default on this
+          # runner is 2 module jobs x 2 unit workers -- four at once, which
+          # peaked at 4.2 GB and tripped the daemon's cap. The runner has 2
+          # vCPUs, so that concurrency was buying nothing anyway.
+          PERRY_MODULE_JOBS: "2"
+          PERRY_CODEGEN_UNIT_JOBS: "1"
+        run: |
+          set -euo pipefail
+          ( cd benchmarks/next-small && npm ci --no-audit --no-fund )
+          free -m | sed "s/^/  mem: /" || true
+          scripts/prepare-next-benchmark.sh
+
       - name: Loader, integrity, and lifecycle tests
         shell: bash
         run: |
@@ -248,6 +284,18 @@ jobs:
             cargo test -p coop-worker --test plugin_roundtrip repeated_load_dispatch_shutdown_reclaims_executor_threads -- --ignored --nocapture
             cargo test -p coop-daemon --test auto_compile -- --nocapture
             cargo test -p coop-worker --test plugin_roundtrip hundred_preloaded_apps_dispatch -- --ignored --nocapture
+            # NOTE: binary_http_roundtrip is NOT run here. It loads the
+            # published next-bench package, and building that package needs
+            # more memory than a GitHub-hosted runner has (see the
+            # `next_fixture` input). It runs on a larger host instead. Leaving
+            # it in unconditionally would fail every run for a reason that has
+            # nothing to do with the change under test.
+            # The Next.js fixture, which until now ran in NO workflow at all.
+            # It is excluded from fast-check as a provider suite (it needs built
+            # provider images) and was never added here, so the only test that
+            # exercises a real framework route was gated by nothing. A proof
+            # that never runs its most interesting case is the failure mode this
+            # repository keeps finding in its own gates.
           '
 
       - name: Linux Perry 1/10/100 RSS, PSS, private-dirty, and cgroup evidence
@@ -281,6 +329,65 @@ jobs:
               2>&1 | tee linux-node-resource-results.txt
           '
 
+      # The density matrices above measure the TINY dependency-free app, which
+      # shares almost everything through the providers and therefore sits near
+      # the floor for marginal cost per deployment. The architecture's claim is
+      # about real applications, so measure one.
+      #
+      # This is meaningful rather than a trick: Perry compiles the Next route
+      # INTO the application dylib, so a loaded copy needs the shared providers
+      # and nothing else -- no node_modules, no build output. N copies are the
+      # genuine marginal cost of an Nth Next deployment on one box.
+      #
+      # Node is required to BUILD the fixture (`npm ci` + `next build`), never
+      # to run it. `prepare-next-benchmark.sh` rebuilds the production route
+      # whenever the source is newer, because a committed build output silently
+      # drifted from its source once already.
+      - name: Linux Next.js 1/10/100 RSS, PSS, private-dirty, and cgroup evidence
+        if: inputs.next_fixture
+        shell: bash
+        env:
+          COOP_BENCH_APP_COUNTS: 1,10,100
+          COOP_BENCH_TRIALS: "2"
+          COOP_BENCH_REQUESTS: "2000"
+          COOP_BENCH_PRELOAD_CONCURRENCY: "4"
+        run: |
+          set -euo pipefail
+          # Resolve the package the daemon just published. Named explicitly so a
+          # missing fixture fails here, rather than silently measuring the tiny
+          # app again and reporting it as Next.
+          app="$(find target/next-benchmark/coop-run/compiled/next-bench \
+                   -mindepth 2 -maxdepth 2 -name 'app.so' -print -quit)"
+          if [ -z "$app" ]; then
+            echo "::error::no published next-bench package to measure"
+            find target/next-benchmark/coop-run/compiled -maxdepth 3 2>&1 | head -20
+            exit 1
+          fi
+          # The density harness COPIES the app image once per deployment
+          # (resource_benchmark.rs: `std::fs::copy(source_app, &app)`), so 100
+          # apps means 100 physical copies. The tiny fixture is trivial; this
+          # one carries Next's whole compiled server surface, so check the
+          # arithmetic BEFORE spending 20 minutes discovering it as ENOSPC --
+          # which surfaces as unrelated-looking failures rather than "disk
+          # full" (see the phantom codegen bug in PerryTS/perry#8228).
+          app_mib=$(( $(stat -c %s "$app") / 1048576 ))
+          free_mib=$(df -m --output=avail . | tail -1 | tr -d ' ')
+          need_mib=$(( app_mib * 111 ))   # 1 + 10 + 100 copies
+          echo "app image: ${app_mib} MiB; 111 copies need ~${need_mib} MiB; free ${free_mib} MiB"
+          if [ "$need_mib" -gt "$free_mib" ]; then
+            echo "::error::Not enough disk to replicate the Next fixture 100x:"
+            echo "::error::  need ~${need_mib} MiB, have ${free_mib} MiB free."
+            echo "::error::Reduce COOP_BENCH_APP_COUNTS or free space on the runner."
+            exit 1
+          fi
+          echo "measuring Next fixture: $app"
+          COOP_BENCH_APP_LIBRARY="$PWD/$app" scripts/run-in-delegated-cgroup.sh bash -c '
+            set -euo pipefail
+            cargo test --release -p coop-daemon --test resource_benchmark \
+              measure_in_process_startup_and_rss -- --ignored --nocapture \
+              2>&1 | tee linux-next-resource-results.txt
+          '
+
       - name: Upload raw Linux evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -289,6 +396,7 @@ jobs:
           path: |
             linux-resource-results.txt
             linux-node-resource-results.txt
+            linux-next-resource-results.txt
             linux-benchmark-environment.txt
             target/dynamic-smoke/prepare.log
           if-no-files-found: warn

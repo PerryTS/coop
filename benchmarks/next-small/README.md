@@ -37,6 +37,32 @@ hook. Reverse them and `next/server` resolves to the edge build, whose module
 init throws `Invariant: AsyncLocalStorage accessed in runtime where it is not
 available`.
 
+
+## Where this fixture is measured, and why not in CI
+
+Compiling it peaks **above 8.3 GB RSS**. A GitHub-hosted runner has 7.75 GB, so
+it cannot complete there at any cap setting — both attempts died at the
+daemon's limit rather than at their true peak, which is why the first
+measurement (4.2 GB) was the cap and not the peak.
+
+Reducing Perry's codegen concurrency would fix it, but Coop deliberately calls
+`env_clear()` before spawning the compiler so ambient `PERRY_*` switches cannot
+silently change emitted code without changing build identity, and
+`COMPILER_ENV_ALLOWLIST` carries toolchain paths only. That guard is worth more
+than the convenience of overriding it.
+
+So the Linux proof gates the tiny dependency-free fixture, and the Next steps
+are behind the `next_fixture` workflow-dispatch input, off by default. Run them
+on a host that can carry the compile. It has been done on an 8-core/8 GB M1
+mini in about eight minutes — note that is barely more RAM than the runner, so
+the deciding factor is not memory alone: macOS compresses and swaps under
+pressure, while the Linux path is stopped dead by the daemon's `compile_max_rss_mb`
+cap. A machine with more real memory is still the safer choice.
+
+Verified there against the pinned Perry: a COOP request frame in,
+`AppRouteRouteModule.handle` executed natively, `status: 200` and the route's
+own body out.
+
 Build the Node form from this directory:
 
 ```sh

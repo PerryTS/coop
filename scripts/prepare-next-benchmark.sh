@@ -15,6 +15,12 @@ source_root="${COOP_NEXT_SOURCE_DIR:-$repo_root/benchmarks/next-small}"
 perry="${COOP_BENCH_PERRY:-$repo_root/.perry-main/target/perry-dev/perry}"
 provider_verification="${COOP_BENCH_PROVIDER_VERIFICATION:-full_hash}"
 timeout_seconds="${COOP_NEXT_PREPARE_TIMEOUT:-1200}"
+# Compile peak for this fixture is well above 6 GB and has never been measured
+# to completion under a cap -- every run so far died AT the limit, so each
+# reported figure was the cap and not the peak. Raise this on a host with real
+# memory; the default is a floor that keeps a constrained runner from swapping
+# itself to death, not a statement about what the compile needs.
+max_rss_mb="${COOP_NEXT_MAX_RSS_MB:-6144}"
 
 case "$(uname -s)" in
   Darwin) extension="dylib" ;;
@@ -71,8 +77,14 @@ fi
 route_build="$source_root/.next/server/app/api/benchmark/route.js"
 if [[ ! -f "$route_build" || "$source_root/app/api/benchmark/route.ts" -nt "$route_build" ]]; then
   echo "building the production Next App Route (source is newer than the build)" >&2
-  ( cd "$source_root" && npx --no-install next build >/dev/null ) || \
-    fail "next build failed in $source_root" "(cd $source_root && npx next build)"
+  # --webpack is not optional. Next 16 defaults to turbopack, whose runtime
+  # loads chunks with `require(path.resolve(RUNTIME_ROOT, chunkPath))` -- a
+  # computed require an ahead-of-time compiler cannot resolve, so the chunk
+  # never enters the binary and the route dies on first dispatch. The
+  # fixture's own package.json script has always said `next build --webpack`;
+  # invoking `next build` directly silently changed the bundler.
+  ( cd "$source_root" && npx --no-install next build --webpack >/dev/null ) || \
+    fail "next build failed in $source_root" "(cd $source_root && npm run build)"
 fi
 if [[ ! -f "$route_build" ]]; then
   fail "next build produced no $route_build" \
@@ -108,9 +120,42 @@ cp "$source_root/coop/coop.toml" "$deployment/coop.toml"
 cp "$source_root/coop/coop-handler.ts" "$deployment/handlers/main.ts"
 cp "$source_root/app/api/benchmark/route.ts" "$deployment/app/api/benchmark/route.ts"
 ln -sfn "$source_root/node_modules" "$deployment/node_modules"
-# The production build output, linked like the dependency tree: it is
-# generated, not source, and the daemon dereferences it into its snapshot.
-ln -sfn "$source_root/.next" "$deployment/.next"
+# Stage the production build output as ordinary deployment source.
+#
+# Location is the signal, not extension. `collect_modules.rs` compiles a
+# `.js`/`.cjs`/`.mjs` file through the native AOT pipeline exactly like a `.ts`
+# file when it is project source, and classifies it as a runtime-JS module only
+# when it sits under `node_modules`. There is no V8 fallback any more, so that
+# classification is now a refusal.
+#
+# Two earlier attempts here were wrong in instructive ways:
+#
+#   * a `.next` SYMLINK beside the handler -- `collect_source_files` skips
+#     dot-directories and rejects symlinks outright, so it never reached the
+#     compiler at all and Perry reported a missing module.
+#   * a copy into `node_modules/.coop-next-bundle/` -- that reached the
+#     compiler, but sitting under node_modules gave it the runtime-JS
+#     classification, and the leading dot excluded it from
+#     `collect_packages_in_node_modules`, so the automatic `compilePackages`
+#     `"*"` expansion (the default when no package.json pins the key) never
+#     covered it either. Both of those were self-inflicted.
+#
+# Plain directory, no dot, outside node_modules: `collect_source_files` walks
+# it, every `.js` is collected, and Perry compiles the whole bundle natively
+# with no opt-in required.
+bundle_dir="$deployment/next-build"
+rm -rf "$bundle_dir"
+mkdir -p "$bundle_dir"
+cp -R "$source_root/.next/server" "$bundle_dir/server"
+
+# Assert the route reached the staging tree. The failure this guards is silent
+# and costs a full CI cycle: the import resolves to nothing and Perry reports a
+# missing module rather than a missing FILE.
+staged_route="$bundle_dir/server/app/api/benchmark/route.js"
+if [[ ! -f "$staged_route" ]]; then
+  fail "the production route did not reach the staged bundle: $staged_route" \
+    "check that next build produced .next/server/app/api/benchmark/route.js"
+fi
 
 # The pre-2026-08-14 hand-built fixture lived at this mutable path. Coop no
 # longer publishes there, and leaving it behind lets a stale library outlive a
@@ -138,6 +183,25 @@ listen_http = "$2"
 [execution]
 mode = "in_process"
 provider_verification = "$provider_verification"
+# The default 300 s is sized for ordinary application code. This fixture
+# compiles Next's whole production server surface natively -- the App Route
+# runtime alone is ~15-21 MB of IR across 400-535 functions, which Perry drops
+# to -Os because LLVM's -O1+ pipeline will not survive functions that wide
+# (#4880). Measured at roughly 8 minutes on a quiet M1; a 2-vCPU CI runner is
+# slower still.
+#
+# It got slower for a good reason: disabling server chunk splitting made
+# route.js self-contained, so there is simply more to compile. The earlier
+# 77-second compile was the split build, which then failed at runtime because
+# the chunks were loaded by a computed require.
+compile_timeout_seconds = 1800
+# Peak compile RSS scales with concurrent LLVM units, and this fixture's units
+# are enormous (15-21 MB of IR each). At the default 2 module jobs x 2 unit
+# workers the compile peaked at 4.2 GB and tripped the 4 GB cap. The workflow
+# pins concurrency to 2 total units; this leaves headroom above that without
+# approaching the runner's 7.75 GB, where the kernel OOM killer would replace
+# a clean refusal with a mysterious death.
+compile_max_rss_mb = $max_rss_mb
 
 [paths]
 deployments_dir = "$fixture_root/deployments"
@@ -175,7 +239,19 @@ trap cleanup EXIT INT TERM
 # an earlier run once satisfied a naive file check with a package the daemon
 # had just refused.
 loaded() {
-  grep -F 'application library preloaded on dedicated Perry thread' "$log_file" \
+  # Two load paths, two log lines. A dedicated worker logs "preloaded on
+  # dedicated Perry thread"; an in-daemon load (isolation resolving to
+  # "trusted", which is what this fixture gets) logs "preloading application
+  # library in daemon". Waiting only for the first meant a perfectly good
+  # build sat until the one-shot daemon exited, and the script then reported
+  # "Coop exited before publishing" for a fixture it had already published --
+  # the log said `compilation succeeded and immutable package was published`
+  # three lines above the error.
+  #
+  # Matching either keeps this honest about what it is waiting for: the app
+  # being loaded, not the particular thread it landed on. The published-package
+  # check below is what actually validates the result.
+  grep -E 'application library preloaded on dedicated Perry thread|preloading application library in daemon' "$log_file" \
     | grep -Fq 'next-bench'
 }
 

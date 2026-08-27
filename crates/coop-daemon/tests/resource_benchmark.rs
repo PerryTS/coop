@@ -13,6 +13,7 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const PACKAGE_DIGEST_V2_DOMAIN: &[u8] = b"coop-application-package-v2\0";
@@ -370,6 +371,66 @@ fn locate_prepared_app(workspace: &Path, extension: &str) -> PathBuf {
     candidates.pop().unwrap_or(legacy)
 }
 
+/// Request path the benchmark drives, and the substring its response must
+/// contain.
+///
+/// The tiny fixture answers `/` with exactly `ok`, and the harness asserted
+/// both literally. That is a FIXTURE CONTRACT, not a property of the
+/// benchmark: point `COOP_BENCH_APP_LIBRARY` at the Next.js fixture and it
+/// serves `/api/benchmark` with JSON, so the run died on `left: 404` before
+/// measuring anything.
+///
+/// A substring rather than an exact match, because a real application's body
+/// carries incidental detail (checksums, timing) that would make an equality
+/// assertion brittle without making it stronger. The point is to prove the
+/// request was actually served, not to re-verify the payload -- correctness
+/// belongs to `binary_http_roundtrip`.
+/// Concurrency and per-request timeout for the workload phase.
+///
+/// Both were hardcoded (50 concurrent, 10 s) around the tiny fixture, whose
+/// handler answers in microseconds. A real Next.js route is orders of
+/// magnitude heavier per dispatch, and 50 concurrent requests queued on one
+/// app's executor exceed a 10 s client timeout — on a QUIET host, so this is
+/// the workload's shape rather than contention. Measured: 50 requests pass in
+/// 3.4 s, 500 time out.
+/// Execution mode under measurement.
+///
+/// `in_process` runs every app in the daemon address space — maximum density,
+/// and the arm that Perry's process-global runtime state currently limits to
+/// one JS heap. `worker` gives each deployment its own process, which sidesteps
+/// that entirely.
+///
+/// The comparison decides whether the in-process model is worth a large change
+/// to Perry: a `.dylib`'s text pages are already shared across processes by the
+/// kernel, so `worker` may capture most of the memory win without it.
+fn bench_execution_mode() -> String {
+    std::env::var("COOP_BENCH_EXECUTION_MODE").unwrap_or_else(|_| "in_process".to_string())
+}
+
+fn bench_workload_concurrency() -> usize {
+    std::env::var("COOP_BENCH_WORKLOAD_CONCURRENCY")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50)
+}
+
+fn bench_request_timeout() -> Duration {
+    Duration::from_secs(
+        std::env::var("COOP_BENCH_REQUEST_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10),
+    )
+}
+
+fn bench_request_path() -> String {
+    std::env::var("COOP_BENCH_REQUEST_PATH").unwrap_or_else(|_| "/".to_string())
+}
+
+fn bench_expect_body() -> String {
+    std::env::var("COOP_BENCH_EXPECT_BODY").unwrap_or_else(|_| "ok".to_string())
+}
+
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -484,6 +545,7 @@ method = "GET"
     }
 
     let port = pick_free_port();
+    let execution_mode = bench_execution_mode();
     let config = root.join("runtime.toml");
     std::fs::write(
         &config,
@@ -492,7 +554,7 @@ method = "GET"
 listen_http = "127.0.0.1:{port}"
 
 [execution]
-mode = "in_process"
+mode = "{execution_mode}"
 preload_concurrency = {preload_concurrency}
 
 [paths]
@@ -560,13 +622,43 @@ fn start_and_wait(
     if let Some(cgroup) = cgroup {
         command.arg("--self-cgroup-procs").arg(cgroup.procs_path());
     }
+    // stderr was `Stdio::null()`, so a daemon that failed to start reported
+    // only "exit status: 1" and threw its reason away. Every diagnosis of a
+    // failed preload then required reproducing the run by hand. Capture it and
+    // print it on the failure paths instead: the daemon already says exactly
+    // what went wrong, we were just discarding it.
     let mut child = command
         .env("RUST_LOG", "info")
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("spawn benchmark daemon");
     let stdout = child.stdout.take().expect("capture daemon stdout");
+    let stderr = child.stderr.take().expect("capture daemon stderr");
+    let captured_errors = Arc::new(Mutex::new(Vec::<String>::new()));
+    let error_sink = Arc::clone(&captured_errors);
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            let mut sink = error_sink.lock().expect("daemon stderr sink");
+            // Bounded: a failing daemon can be chatty, and the tail is the
+            // part that explains the exit.
+            if sink.len() == 400 {
+                sink.remove(0);
+            }
+            sink.push(line);
+        }
+    });
+    let report_errors = || {
+        let sink = captured_errors.lock().expect("daemon stderr sink");
+        if sink.is_empty() {
+            "  (daemon produced no stderr)".to_string()
+        } else {
+            sink.iter()
+                .map(|line| format!("  daemon: {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+    };
     let (line_tx, line_rx) = mpsc::channel();
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
@@ -580,8 +672,9 @@ fn start_and_wait(
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
+            let errors = report_errors();
             stop(&mut child);
-            panic!("daemon did not become ready within {READY_TIMEOUT:?}");
+            panic!("daemon did not become ready within {READY_TIMEOUT:?}\n{errors}");
         }
         match line_rx.recv_timeout(remaining.min(Duration::from_secs(1))) {
             Ok(line) => {
@@ -594,12 +687,15 @@ fn start_and_wait(
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if let Some(status) = child.try_wait().expect("query daemon status") {
-                    panic!("daemon exited before ready: {status}");
+                    panic!("daemon exited before ready: {status}\n{}", report_errors());
                 }
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 let status = child.wait().expect("wait for failed daemon");
-                panic!("daemon output closed before ready: {status}");
+                panic!(
+                    "daemon output closed before ready: {status}\n{}",
+                    report_errors()
+                );
             }
         }
     }
@@ -607,27 +703,35 @@ fn start_and_wait(
 
 async fn warm_every_app(port: u16, app_count: usize) {
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
+        .timeout(bench_request_timeout())
         .build()
         .expect("build benchmark HTTP client");
     for index in 0..app_count {
         let name = app_name(index);
         let response = client
-            .get(format!("http://127.0.0.1:{port}/"))
+            .get(format!("http://127.0.0.1:{port}{}", bench_request_path()))
             .header("host", format!("{name}.bench"))
             .send()
             .await
             .expect("dispatch warm request");
         assert_eq!(response.status(), 200, "warm request for {name}");
         let body = response.bytes().await.expect("read warm response");
-        assert_eq!(body.as_ref(), b"ok", "warm response for {name}");
+        let expected = bench_expect_body();
+        assert!(
+            String::from_utf8_lossy(body.as_ref()).contains(&expected),
+            "warm response for {name} did not contain {expected:?}: {}",
+            String::from_utf8_lossy(body.as_ref())
+                .chars()
+                .take(200)
+                .collect::<String>()
+        );
     }
 }
 
 async fn run_workload(port: u16, app_count: usize, requests: usize) {
     let client = reqwest::Client::builder()
         .pool_max_idle_per_host(100)
-        .timeout(Duration::from_secs(10))
+        .timeout(bench_request_timeout())
         .build()
         .expect("build workload HTTP client");
     stream::iter(0..requests)
@@ -636,42 +740,92 @@ async fn run_workload(port: u16, app_count: usize, requests: usize) {
             let name = app_name(index % app_count);
             async move {
                 let response = client
-                    .get(format!("http://127.0.0.1:{port}/"))
+                    .get(format!("http://127.0.0.1:{port}{}", bench_request_path()))
                     .header("host", format!("{name}.bench"))
                     .send()
                     .await
                     .expect("dispatch workload request");
                 assert_eq!(response.status(), 200);
-                assert_eq!(
-                    response
-                        .bytes()
-                        .await
-                        .expect("read workload response")
-                        .as_ref(),
-                    b"ok"
+                let body = response.bytes().await.expect("read workload response");
+                let expected = bench_expect_body();
+                assert!(
+                    String::from_utf8_lossy(body.as_ref()).contains(&expected),
+                    "workload response did not contain {expected:?}"
                 );
             }
         })
-        .buffer_unordered(50)
+        .buffer_unordered(bench_workload_concurrency())
         .collect::<Vec<_>>()
         .await;
+}
+
+/// Resident memory of the daemon AND every process it spawned.
+///
+/// This sampled only the daemon's own pid. In `in_process` mode that is the
+/// whole system, so the figures were right. In `worker` mode each deployment
+/// runs in its OWN process, none of which the sampler looked at — so ten apps
+/// reported ~18 MiB, indistinguishable from one, and worker mode appeared
+/// dramatically denser than in-process. That is not density, it is an empty
+/// daemon: an instrument that cannot see what it claims to measure.
+///
+/// Summing the tree keeps `in_process` unchanged (it has no children holding
+/// apps) while making `worker` mean what the column header says.
+fn descendant_pids(root: u32) -> Vec<u32> {
+    // One `ps` snapshot, then walk the ppid graph. Repeated `pgrep -P` calls
+    // race against worker restarts and can miss a generation.
+    let output = Command::new("ps")
+        .args(["-eo", "pid=,ppid="])
+        .output()
+        .expect("list processes");
+    assert!(output.status.success(), "ps failed while listing processes");
+    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    let mut children: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        if let (Some(pid), Some(ppid)) = (parts.next(), parts.next()) {
+            if let (Ok(pid), Ok(ppid)) = (pid.parse::<u32>(), ppid.parse::<u32>()) {
+                children.entry(ppid).or_default().push(pid);
+            }
+        }
+    }
+    let mut out = vec![root];
+    let mut queue = vec![root];
+    while let Some(next) = queue.pop() {
+        if let Some(kids) = children.get(&next) {
+            for kid in kids {
+                if !out.contains(kid) {
+                    out.push(*kid);
+                    queue.push(*kid);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn tree_rss_kib(root: u32) -> u64 {
+    descendant_pids(root)
+        .iter()
+        .filter_map(|pid| {
+            let output = Command::new("ps")
+                .args(["-o", "rss=", "-p", &pid.to_string()])
+                .output()
+                .ok()?;
+            // A worker can exit between the snapshot and this sample; skip it
+            // rather than failing the whole measurement.
+            String::from_utf8(output.stdout)
+                .ok()?
+                .trim()
+                .parse::<u64>()
+                .ok()
+        })
+        .sum()
 }
 
 fn median_rss_kib(pid: u32) -> u64 {
     let mut readings = Vec::with_capacity(7);
     for _ in 0..7 {
-        let output = Command::new("ps")
-            .args(["-o", "rss=", "-p", &pid.to_string()])
-            .output()
-            .expect("sample daemon RSS");
-        assert!(output.status.success(), "ps failed while sampling RSS");
-        readings.push(
-            String::from_utf8(output.stdout)
-                .expect("ps output is UTF-8")
-                .trim()
-                .parse::<u64>()
-                .expect("parse RSS in KiB"),
-        );
+        readings.push(tree_rss_kib(pid));
         std::thread::sleep(Duration::from_millis(25));
     }
     median_u64(readings)

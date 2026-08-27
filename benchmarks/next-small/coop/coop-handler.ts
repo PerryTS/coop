@@ -37,7 +37,10 @@
 //
 // So accept either shape and fail loudly if neither carries a routeModule,
 // rather than dereferencing undefined and reporting something confusing.
-import * as routeBundleNamespace from "../.next/server/app/api/benchmark/route.js";
+// Staged as ordinary deployment source by prepare-next-benchmark.sh. Outside
+// node_modules and without a leading dot, so Perry compiles it natively --
+// location is what decides AOT vs runtime-JS classification, not extension.
+import * as routeBundleNamespace from "../next-build/server/app/api/benchmark/route.js";
 
 // IMPORT ORDER IS LOAD-BEARING. The route bundle must be loaded BEFORE
 // `next/server`: loading it installs Next's require hook, and without that
@@ -46,11 +49,23 @@ import * as routeBundleNamespace from "../.next/server/app/api/benchmark/route.j
 // available". Verified by reordering these two lines and watching it break.
 import { NextRequest } from "next/server";
 
-const routeBundle: Record<string, unknown> =
-  (routeBundleNamespace as Record<string, unknown>).routeModule !== undefined
-    ? (routeBundleNamespace as Record<string, unknown>)
-    : (((routeBundleNamespace as Record<string, unknown>).default ??
-        {}) as Record<string, unknown>);
+// Resolved with plain statements rather than a nested ternary plus `??`.
+// Measured shape under Perry for a webpack CommonJS bundle:
+//   ns keys            : default, module.exports
+//   ns.routeModule     : undefined
+//   ns.default         : object  <- the real exports live here
+//   default.routeModule: object, and .handle IS a function
+// The interop shape differs by toolchain, so try the namespace first and fall
+// back to `default`, and keep the expression simple enough to be obviously
+// correct at a glance.
+const routeNamespace = routeBundleNamespace as unknown as Record<string, unknown>;
+let routeBundle: Record<string, unknown> = routeNamespace;
+if (routeNamespace.routeModule === undefined) {
+  const fallback = routeNamespace.default;
+  if (fallback !== undefined && fallback !== null) {
+    routeBundle = fallback as Record<string, unknown>;
+  }
+}
 
 const routeModule = routeBundle.routeModule as
   | { handle: (request: object, context: unknown) => Promise<Response> }
