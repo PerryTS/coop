@@ -22,6 +22,9 @@ pub(crate) type JsFfiRootScopeEnter = unsafe extern "C" fn() -> usize;
 pub(crate) type JsFfiRootScopeExit = unsafe extern "C" fn(usize);
 pub(crate) type JsFfiRootPushNanbox = unsafe extern "C" fn(u64) -> usize;
 pub(crate) type JsFfiRootGetNanbox = unsafe extern "C" fn(usize) -> u64;
+/// `js_jsvalue_to_string(value) -> *mut StringHeader`: stringify ANY JS value,
+/// so a non-string rejection (an `Error` object) can still be reported.
+pub(crate) type JsValueToString = unsafe extern "C" fn(f64) -> *const u8;
 pub(crate) type PerryPoll = unsafe extern "C" fn() -> i32;
 pub(crate) type JsWaitForEvent = unsafe extern "C" fn();
 pub(crate) type JsValueIsPromise = unsafe extern "C" fn(f64) -> i32;
@@ -48,6 +51,7 @@ pub(crate) struct RuntimeApi {
     pub js_ffi_root_scope_exit: JsFfiRootScopeExit,
     pub js_ffi_root_push_nanbox: JsFfiRootPushNanbox,
     pub js_ffi_root_get_nanbox: JsFfiRootGetNanbox,
+    pub js_jsvalue_to_string: JsValueToString,
     pub perry_poll: PerryPoll,
     pub js_wait_for_event: JsWaitForEvent,
     pub js_value_is_promise: JsValueIsPromise,
@@ -196,6 +200,7 @@ pub fn initialize_runtime_libraries_with_verification(
                 js_ffi_root_scope_exit: load_symbol(runtime_handle, "js_ffi_root_scope_exit")?,
                 js_ffi_root_push_nanbox: load_symbol(runtime_handle, "js_ffi_root_push_nanbox")?,
                 js_ffi_root_get_nanbox: load_symbol(runtime_handle, "js_ffi_root_get_nanbox")?,
+                js_jsvalue_to_string: load_symbol(runtime_handle, "js_jsvalue_to_string")?,
                 perry_poll: load_symbol(runtime_handle, "perry_poll")?,
                 js_wait_for_event: load_symbol(runtime_handle, "js_wait_for_event")?,
                 js_value_is_promise: load_symbol(runtime_handle, "js_value_is_promise")?,
