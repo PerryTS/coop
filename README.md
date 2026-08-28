@@ -195,4 +195,4 @@ need to know a suite actually ran, re-run with `--nocapture` and check for
 
 ## License
 
-See the repository's license file.
+MIT — see [`LICENSE`](LICENSE).
