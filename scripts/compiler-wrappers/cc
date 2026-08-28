@@ -123,7 +123,16 @@ if [ "$is_shared" -eq 1 ] && [ -n "$exports_file" ]; then
             # providers as explicit DT_NEEDED entries even when a tiny app
             # happens not to reference a stdlib symbol directly: the app ABI
             # contract always consists of runtime + stdlib + app-only image.
+            #
+            # libm: LLVM lowers `Math.floor`/`Math.log10`/... in application
+            # code to libm calls (`floor`, `log10`), and Perry's shared-library
+            # link on Linux does not add `-lm` the way its executable link does
+            # (perryts/perry#8942 follow-up). macOS never notices because
+            # libSystem carries libm. Without it the Next fixture's link dies
+            # with `undefined reference to 'floor'` after every other symbol
+            # resolved; the tiny CI fixture calls no libm function.
             exec "$real_cc" "$@" \
+                "-lm" \
                 "-Wl,--no-as-needed" \
                 "$runtime_library" "$stdlib_library" \
                 "-Wl,--as-needed" \
