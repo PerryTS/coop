@@ -395,10 +395,11 @@ fn locate_prepared_app(workspace: &Path, extension: &str) -> PathBuf {
 /// 3.4 s, 500 time out.
 /// Execution mode under measurement.
 ///
-/// `in_process` runs every app in the daemon address space — maximum density,
-/// and the arm that Perry's process-global runtime state currently limits to
-/// one JS heap. `worker` gives each deployment its own process, which sidesteps
-/// that entirely.
+/// `in_process` runs every app in the daemon address space — maximum density.
+/// Until perry#8546 (class registries made per application image, #8893) it
+/// was limited to one working JS heap: every image but the last-initialised
+/// dispatched into the wrong code. `worker` gives each deployment its own
+/// process, which never had that problem.
 ///
 /// The comparison decides whether the in-process model is worth a large change
 /// to Perry: a `.dylib`'s text pages are already shared across processes by the

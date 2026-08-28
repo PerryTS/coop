@@ -82,6 +82,36 @@ sha256_file() {
 }
 
 (cd "$perry_root" && cargo build --profile perry-dev -p perry)
+
+# Ext wrappers. A deployment that imports `http`, `net`, `events`, `zlib`, ...
+# links a per-module static wrapper (`libperry_ext_<name>.a`) INTO its
+# application image. The daemon compiles with --no-auto-optimize and a scrubbed
+# environment, so the compiler cannot build a missing wrapper on demand: its
+# own cargo invocation would link through Coop's `cc` shim (which rejects
+# anything that is not an application link), and a wrapper built in a separate
+# invocation carries a different tokio compilation than the stdlib archive, a
+# pair the link refuses. The only place the daemon's compiler looks without an
+# environment is `<perry target dir>/release/`, so build the wrappers there,
+# in ONE cargo invocation with the static archives (that is what makes them
+# coherent) and with the stdlib pump features the wrappers need.
+#
+# On a developer machine a stale `~/.local/lib/libperry_ext_*.a` from an old
+# `perry` install silently satisfies the lookup instead; this step makes the
+# build stop depending on that accident.
+ext_wrappers="${COOP_PERRY_EXT_WRAPPERS:-http net events lru-cache zlib streams fetch ws uuid}"
+ext_pumps="${COOP_PERRY_EXT_PUMPS:-external-http-server-pump external-http-client-pump external-net-pump external-ws-pump external-zlib-pump}"
+ext_args=(-p perry-runtime-static -p perry-stdlib-static)
+for w in $ext_wrappers; do ext_args+=(-p "perry-ext-$w"); done
+ext_features=""
+for f in $ext_pumps; do ext_features="${ext_features:+$ext_features,}perry-stdlib/$f"; done
+(cd "$perry_root" && cargo build --release "${ext_args[@]}" --features "$ext_features")
+for w in $ext_wrappers; do
+  archive="$perry_root/target/release/libperry_ext_${w//-/_}.a"
+  if [[ ! -f "$archive" ]]; then
+    echo "ext wrapper build did not produce $archive" >&2
+    exit 1
+  fi
+done
 compiler_build="$perry_root/target/perry-dev/perry"
 compiler_sha256="$(sha256_file "$compiler_build")"
 
