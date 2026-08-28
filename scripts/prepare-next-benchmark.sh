@@ -22,12 +22,16 @@ compile_timeout_seconds="${COOP_NEXT_COMPILE_TIMEOUT:-1800}"
 # Outer limit derives from the inner one so the script can never kill a
 # compile the daemon was still entitled to finish.
 timeout_seconds="${COOP_NEXT_PREPARE_TIMEOUT:-$(( compile_timeout_seconds + 900 ))}"
-# Compile peak for this fixture is well above 6 GB and has never been measured
-# to completion under a cap -- every run so far died AT the limit, so each
+# Compile peak for this fixture: with TailCallElim bounded (perry#8894) the
+# parallel emit phase peaks at ~6.3 GB (measured on macOS and Linux), so the
+# previous 6 GB cap killed every run a few minutes in. 12 GB fits that with
+# headroom on any host this script is meant for; GitHub's 7.75 GB runners never
+# run this fixture (the Linux proof gates it behind `next_fixture`). The
+# earlier note stands as history: before #8894 every run died AT the limit, so each
 # reported figure was the cap and not the peak. Raise this on a host with real
 # memory; the default is a floor that keeps a constrained runner from swapping
 # itself to death, not a statement about what the compile needs.
-max_rss_mb="${COOP_NEXT_MAX_RSS_MB:-6144}"
+max_rss_mb="${COOP_NEXT_MAX_RSS_MB:-12288}"
 
 case "$(uname -s)" in
   Darwin) extension="dylib" ;;
