@@ -637,8 +637,17 @@ fn start_and_wait(
     let stderr = child.stderr.take().expect("capture daemon stderr");
     let captured_errors = Arc::new(Mutex::new(Vec::<String>::new()));
     let error_sink = Arc::clone(&captured_errors);
+    // The bounded sink above is reported only on the ready-timeout paths. A
+    // daemon that dies DURING a request -- a from-space fault under
+    // PERRY_GC_PROTECT_FROMSPACE, say -- surfaces here as a reqwest error and
+    // its stderr, fault report included, is thrown away with the sink. Relay it
+    // live on request so the report survives whichever path the test dies on.
+    let trace_daemon = std::env::var_os("COOP_BENCH_TRACE_DAEMON").is_some();
     std::thread::spawn(move || {
         for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if trace_daemon {
+                eprintln!("daemon: {line}");
+            }
             let mut sink = error_sink.lock().expect("daemon stderr sink");
             // Bounded: a failing daemon can be chatty, and the tail is the
             // part that explains the exit.
@@ -661,9 +670,18 @@ fn start_and_wait(
     };
     let (line_tx, line_rx) = mpsc::channel();
     std::thread::spawn(move || {
+        // Keep draining after the ready-wait drops its receiver: the daemon's
+        // structured log (the `deployment dispatch failed` line that names a
+        // 500's cause) goes to stdout, and a reader that stops at "ready"
+        // both discards that line and lets a chatty daemon block on a full
+        // pipe. Echo it live on request, like stderr.
+        let mut receiver_alive = true;
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if line_tx.send(line).is_err() {
-                break;
+            if trace_daemon {
+                eprintln!("daemon: {line}");
+            }
+            if receiver_alive && line_tx.send(line).is_err() {
+                receiver_alive = false;
             }
         }
     });
@@ -706,6 +724,11 @@ async fn warm_every_app(port: u16, app_count: usize) {
         .timeout(bench_request_timeout())
         .build()
         .expect("build benchmark HTTP client");
+    // Warm every app before judging any: which apps fail, not merely that one
+    // did, is the diagnostic. Stopping at the first non-200 hid that the
+    // failing app under perry#8546 is the one whose init finished FIRST.
+    let expected = bench_expect_body();
+    let mut failures = Vec::new();
     for index in 0..app_count {
         let name = app_name(index);
         let response = client
@@ -714,18 +737,23 @@ async fn warm_every_app(port: u16, app_count: usize) {
             .send()
             .await
             .expect("dispatch warm request");
-        assert_eq!(response.status(), 200, "warm request for {name}");
+        let status = response.status();
         let body = response.bytes().await.expect("read warm response");
-        let expected = bench_expect_body();
-        assert!(
-            String::from_utf8_lossy(body.as_ref()).contains(&expected),
-            "warm response for {name} did not contain {expected:?}: {}",
-            String::from_utf8_lossy(body.as_ref())
-                .chars()
-                .take(200)
-                .collect::<String>()
-        );
+        let body = String::from_utf8_lossy(body.as_ref());
+        let excerpt: String = body.chars().take(200).collect();
+        eprintln!("warm {name}: {status} {excerpt:?}");
+        if status != 200 {
+            failures.push(format!("{name}: status {status}"));
+        } else if !body.contains(&expected) {
+            failures.push(format!("{name}: body lacks {expected:?}: {excerpt}"));
+        }
     }
+    assert!(
+        failures.is_empty(),
+        "warm requests failed for {}/{app_count} apps:\n  {}",
+        failures.len(),
+        failures.join("\n  ")
+    );
 }
 
 async fn run_workload(port: u16, app_count: usize, requests: usize) {
